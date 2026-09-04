@@ -1,0 +1,181 @@
+:host {
+  display: block;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1rem 1rem 3rem;
+}
+
+.cabecera {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+h1 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+h2 {
+  font-size: 1.4rem;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.codigo {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--tenue);
+  margin: 0.15rem 0 1.25rem;
+}
+
+.tenue { color: var(--tenue); }
+.error { color: var(--malo); }
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 0.4rem;
+  border: 1px solid var(--borde);
+  background: var(--fondo2);
+  color: inherit;
+  padding: 0.35rem 0.7rem;
+}
+button:hover:not(:disabled) { border-color: var(--acento); }
+button:disabled { opacity: 0.5; cursor: default; }
+
+/* --- Buscador ------------------------------------------------------------ */
+
+.buscador label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--tenue);
+  margin-bottom: 0.4rem;
+}
+
+.buscador input {
+  width: 100%;
+  font: inherit;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--borde);
+  background: var(--fondo2);
+  color: inherit;
+}
+.buscador input:focus {
+  outline: 2px solid var(--acento);
+  outline-offset: 1px;
+}
+
+.resultados {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+.resultados li + li { margin-top: 0.3rem; }
+.resultados button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+}
+.resultados .nombre { font-weight: 500; }
+.resultados .codigo { margin: 0; }
+
+/* --- Llegadas ------------------------------------------------------------ */
+
+.llegadas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--borde);
+}
+
+.llegada {
+  display: grid;
+  grid-template-columns: 4.5rem 5rem 1fr;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.25rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+.linea {
+  font-weight: 700;
+  font-size: 1.05rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.3rem;
+  background: var(--fondo2);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.minutos {
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.minutos small {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--tenue);
+  margin-left: 0.2rem;
+}
+
+.detalle {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+.prog { color: var(--tenue); }
+
+/* Una parada saltada no es una llegada. Que no se pueda confundir. */
+.llegada.saltada {
+  background: var(--malo-fondo);
+}
+.llegada.saltada .minutos {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--malo);
+  letter-spacing: 0.03em;
+}
+.llegada.saltada .nota { color: var(--malo); }
+
+.llegada.cancelada .linea,
+.llegada.cancelada .minutos {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+.llegada.cancelada .nota {
+  color: var(--malo);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+}
+
+.llegada.sin-vivo .minutos { opacity: 0.6; }
+
+/* --- Pie ----------------------------------------------------------------- */
+
+.pie {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  font-size: 0.78rem;
+  color: var(--tenue);
+}
+.pie button { margin-left: auto; }
+.rancio { color: var(--malo); font-weight: 600; }

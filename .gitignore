@@ -1,0 +1,16 @@
+.env
+gtfs/
+snapshots/
+node_modules/
+datos/
+
+# el ZIP del que sale gtfs/ (144 MB) y volcados sueltos del feed
+GTFS_Realtime.zip
+*.zip
+test.json
+
+# generado por scripts\indexar.mjs (179 MB)
+indice/
+
+# logs del recolector
+datos/*.log

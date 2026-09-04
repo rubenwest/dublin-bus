@@ -1,0 +1,93 @@
+<header class="cabecera">
+  <h1>Llegadas · Dublín</h1>
+  @if (parada()) {
+    <button class="volver" type="button" (click)="volver()">Cambiar parada</button>
+  }
+</header>
+
+@if (!parada()) {
+  <section class="buscador">
+    <label for="q">Busca tu parada</label>
+    <input
+      id="q"
+      type="search"
+      autocomplete="off"
+      placeholder="O'Connell, Dun Laoghaire, 8250DB002039..."
+      [value]="consulta()"
+      (input)="alEscribir($any($event.target).value)" />
+
+    @if (buscando()) {
+      <p class="tenue">Buscando...</p>
+    }
+
+    @if (resultados().length) {
+      <ul class="resultados">
+        @for (p of resultados(); track p.id) {
+          <li>
+            <button type="button" (click)="seleccionar(p)">
+              <span class="nombre">{{ p.nombre }}</span>
+              <span class="codigo">{{ p.id }}</span>
+            </button>
+          </li>
+        }
+      </ul>
+    } @else if (consulta().length >= 2 && !buscando()) {
+      <p class="tenue">Ninguna parada coincide.</p>
+    }
+  </section>
+} @else {
+  <section class="parada">
+    <h2>{{ parada()!.nombre }}</h2>
+    <p class="codigo">{{ parada()!.id }}</p>
+
+    @if (error()) {
+      <p class="error">{{ error() }}</p>
+    }
+
+    @if (datos(); as d) {
+      @if (hayLlegadas()) {
+        <ul class="llegadas">
+          @for (l of d.llegadas; track l.tripId + l.programado) {
+            <li
+              class="llegada"
+              [class.saltada]="l.estado === 'SALTADA'"
+              [class.cancelada]="l.estado === 'CANCELADO'"
+              [class.sin-vivo]="l.estado === 'SOLO_HORARIO' || l.estado === 'SIN_DATOS'">
+              <span class="linea">{{ l.linea }}</span>
+              <span class="minutos">
+                {{ cuando(l) }}<small>{{ unidad(l) }}</small>
+              </span>
+              <span class="detalle">
+                <span class="prog">{{ horaProgramada(l) }}</span>
+                <span class="nota">{{ nota(l) }}</span>
+              </span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="tenue">
+          Sin llegadas en los próximos 90 minutos.
+        </p>
+      }
+
+      <footer class="pie">
+        <span>Actualizado a las {{ horaActualizado() }}</span>
+        @if (antiguedad() !== null) {
+          <span [class.rancio]="antiguedad()! > 180">
+            · feed de hace {{ antiguedad() }} s
+          </span>
+        }
+        @if (d.descartadosPorDelayAbsurdo > 0) {
+          <span class="tenue">
+            · {{ d.descartadosPorDelayAbsurdo }} descartada(s) por retraso absurdo
+          </span>
+        }
+        <button type="button" (click)="refrescar()" [disabled]="cargando()">
+          {{ cargando() ? 'Actualizando...' : 'Actualizar' }}
+        </button>
+      </footer>
+    } @else if (!error()) {
+      <p class="tenue">Cargando llegadas...</p>
+    }
+  </section>
+}
