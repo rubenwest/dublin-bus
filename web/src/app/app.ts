@@ -1,4 +1,5 @@
 import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
+import { SwUpdate } from '@angular/service-worker';
 import { Api, Llegada, Llegadas, Parada } from './api';
 import { entorno } from './entorno';
 
@@ -35,6 +36,7 @@ function normaliza(s: string): string {
 })
 export class App implements OnDestroy {
   private api = inject(Api);
+  private swUpdate = inject(SwUpdate);
 
   readonly paradas = signal<Parada[]>([]);
   readonly parada = signal<Parada | null>(null);
@@ -146,13 +148,43 @@ export class App implements OnDestroy {
   );
 
   private temporizador: ReturnType<typeof setInterval> | null = null;
+  private comprobarVersion: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     void this.cargarParadas();
+    this.vigilarActualizaciones();
   }
 
   ngOnDestroy(): void {
     this.pararRefresco();
+    if (this.comprobarVersion) clearInterval(this.comprobarVersion);
+  }
+
+  /**
+   * Auto-actualización de la PWA. Sin esto, tras un despliegue el service worker
+   * sigue sirviendo la versión vieja hasta que cierras la app del todo y la
+   * abres dos veces: la primera baja la nueva en segundo plano, la segunda la
+   * muestra. Con esto la app se recarga sola en cuanto el SW tiene lista la
+   * versión nueva, y además la busca al volver a la pestaña y cada pocos
+   * minutos, para no depender de reabrir. En `ng serve` el SW está desactivado,
+   * así que `isEnabled` es false y esto no hace nada.
+   */
+  private vigilarActualizaciones(): void {
+    if (!this.swUpdate.isEnabled) return;
+
+    this.swUpdate.versionUpdates.subscribe((ev) => {
+      if (ev.type === 'VERSION_READY') document.location.reload();
+    });
+    // Si el SW queda en un estado del que no puede recuperarse, recargar limpio.
+    this.swUpdate.unrecoverable.subscribe(() => document.location.reload());
+
+    const comprobar = () => {
+      void this.swUpdate.checkForUpdate().catch(() => {});
+    };
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') comprobar();
+    });
+    this.comprobarVersion = setInterval(comprobar, 5 * 60_000);
   }
 
   private async cargarParadas(): Promise<void> {

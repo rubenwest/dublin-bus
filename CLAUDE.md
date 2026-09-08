@@ -16,10 +16,18 @@ Si el proyecto se queda en "muestro los minutos", no aporta nada.
 **Al día 2026-09-08: 338 paradas en vivo (el centro de Dublín), histórico en 3.**
 La web ya no lista paradas a pelo: hay buscador por nombre o línea, chips con
 las líneas de cada parada (que es lo que distingue las siete "O'Connell St") y
-favoritas en `localStorage`. Cada resultado lleva un sprite pixel-art (8-bit)
-que distingue bus de tranvía: bus si el id empieza por otra cosa, Luas (magenta,
-con pantógrafo) si empieza por `8220GA`. Los sprites son SVG inline en `app.css`
-como data-URI, con colores fijos que leen en claro y oscuro.
+favoritas en `localStorage`. Cada resultado —y la cabecera de la pantalla de
+llegadas— lleva un sprite pixel-art (8-bit) que distingue bus de tranvía: bus si
+el id empieza por otra cosa, Luas (magenta, con pantógrafo) si empieza por
+`8220GA`. Los sprites son SVG inline en `app.css` como data-URI, con colores
+fijos que leen en claro y oscuro.
+
+**La PWA se auto-actualiza** (`SwUpdate` en `app.ts`). Antes, tras un despliegue
+el service worker seguía sirviendo la versión vieja hasta cerrar la app del todo
+y abrirla dos veces —confundió: "he metido los iconos pero no los veo" era la
+caché, no un fallo—. Ahora se recarga sola en cuanto el SW tiene lista la
+versión nueva, y la busca al volver a la pestaña y cada 5 min. En `ng serve` el
+SW está desactivado, así que no hace nada en local.
 
 
 - Cuenta creada en developer.nationaltransport.ie, suscrito al producto

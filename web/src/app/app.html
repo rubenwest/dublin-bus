@@ -93,7 +93,10 @@
   </section>
 } @else {
   <section class="parada">
-    <h2>{{ parada()!.nombre }}</h2>
+    <div class="titulo">
+      <span class="sprite grande" [class.tram]="esTram(parada()!)" aria-hidden="true"></span>
+      <h2>{{ parada()!.nombre }}</h2>
+    </div>
     <p class="codigo">{{ parada()!.id }}</p>
 
     @if (error()) {

@@ -115,6 +115,20 @@ button:disabled { opacity: 0.5; cursor: default; }
   image-rendering: pixelated;
   background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2016%2012'%20shape-rendering%3D'crispEdges'%3E%3Crect%20x%3D'1'%20y%3D'2'%20width%3D'14'%20height%3D'7'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'1'%20y%3D'2'%20width%3D'14'%20height%3D'1'%20fill%3D'%23ffd23f'%2F%3E%3Crect%20x%3D'2'%20y%3D'4'%20width%3D'12'%20height%3D'2'%20fill%3D'%23bfe9ff'%2F%3E%3Crect%20x%3D'4'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'7'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'10'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'1'%20y%3D'7'%20width%3D'14'%20height%3D'1'%20fill%3D'%23c98a00'%2F%3E%3Crect%20x%3D'2'%20y%3D'9'%20width%3D'2'%20height%3D'2'%20fill%3D'%232f2f37'%2F%3E%3Crect%20x%3D'11'%20y%3D'9'%20width%3D'2'%20height%3D'2'%20fill%3D'%232f2f37'%2F%3E%3C%2Fsvg%3E");
 }
+/* En la cabecera de llegadas el sprite acompaña al nombre grande, así que va
+   un punto mayor. */
+.sprite.grande {
+  width: 34px;
+  height: 26px;
+}
+
+/* Nombre de la parada con su icono al lado, en la pantalla de llegadas. */
+.titulo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .sprite.tram {
   background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2016%2012'%20shape-rendering%3D'crispEdges'%3E%3Crect%20x%3D'8'%20y%3D'0'%20width%3D'1'%20height%3D'2'%20fill%3D'%239aa3af'%2F%3E%3Crect%20x%3D'5'%20y%3D'0'%20width%3D'6'%20height%3D'1'%20fill%3D'%239aa3af'%2F%3E%3Crect%20x%3D'2'%20y%3D'2'%20width%3D'12'%20height%3D'7'%20fill%3D'%23c026d3'%2F%3E%3Crect%20x%3D'2'%20y%3D'2'%20width%3D'12'%20height%3D'1'%20fill%3D'%23e879f9'%2F%3E%3Crect%20x%3D'3'%20y%3D'4'%20width%3D'10'%20height%3D'2'%20fill%3D'%23bfe9ff'%2F%3E%3Crect%20x%3D'7'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23c026d3'%2F%3E%3Crect%20x%3D'2'%20y%3D'8'%20width%3D'12'%20height%3D'1'%20fill%3D'%2386198f'%2F%3E%3Crect%20x%3D'1'%20y%3D'9'%20width%3D'14'%20height%3D'1'%20fill%3D'%239aa3af'%2F%3E%3Crect%20x%3D'4'%20y%3D'10'%20width%3D'1'%20height%3D'1'%20fill%3D'%232f2f37'%2F%3E%3Crect%20x%3D'11'%20y%3D'10'%20width%3D'1'%20height%3D'1'%20fill%3D'%232f2f37'%2F%3E%3C%2Fsvg%3E");
 }
