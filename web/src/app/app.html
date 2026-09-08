@@ -5,35 +5,35 @@
   }
 </header>
 
+@if (error() && !parada()) {
+  <p class="error">{{ error() }}</p>
+}
+
 @if (!parada()) {
   <section class="buscador">
-    <label for="q">Busca tu parada</label>
-    <input
-      id="q"
-      type="search"
-      autocomplete="off"
-      placeholder="O'Connell, Dun Laoghaire, 8250DB002039..."
-      [value]="consulta()"
-      (input)="alEscribir($any($event.target).value)" />
+    <label>Elige parada</label>
 
-    @if (buscando()) {
-      <p class="tenue">Buscando...</p>
-    }
-
-    @if (resultados().length) {
+    @if (paradas().length) {
       <ul class="resultados">
-        @for (p of resultados(); track p.id) {
+        @for (p of paradas(); track p.id) {
           <li>
-            <button type="button" (click)="seleccionar(p)">
+            <button type="button" data-test="parada" (click)="seleccionar(p)">
               <span class="nombre">{{ p.nombre }}</span>
               <span class="codigo">{{ p.id }}</span>
             </button>
           </li>
         }
       </ul>
-    } @else if (consulta().length >= 2 && !buscando()) {
-      <p class="tenue">Ninguna parada coincide.</p>
+    } @else if (cargando()) {
+      <p class="tenue">Cargando paradas...</p>
+    } @else {
+      <p class="tenue">No hay ninguna parada con datos todavía.</p>
     }
+
+    <p class="tenue nota-alcance">
+      Solo aparecen las paradas que se están recolectando. Añadir una es
+      cargar su horario y marcarla; no cuesta ni una llamada más a la API.
+    </p>
   </section>
 } @else {
   <section class="parada">
@@ -44,12 +44,20 @@
       <p class="error">{{ error() }}</p>
     }
 
+    @if (rancio()) {
+      <p class="error" data-test="rancio">
+        Los datos son de hace {{ datos()!.antiguedadSegundos }} s. La
+        recolección puede estar caída: no te fíes de estos minutos.
+      </p>
+    }
+
     @if (datos(); as d) {
       @if (hayLlegadas()) {
-        <ul class="llegadas">
+        <ul class="llegadas" data-test="llegadas">
           @for (l of d.llegadas; track l.tripId + l.programado) {
             <li
               class="llegada"
+              [attr.data-estado]="l.estado"
               [class.saltada]="l.estado === 'SALTADA'"
               [class.cancelada]="l.estado === 'CANCELADO'"
               [class.sin-vivo]="l.estado === 'SOLO_HORARIO' || l.estado === 'SIN_DATOS'">
@@ -65,23 +73,12 @@
           }
         </ul>
       } @else {
-        <p class="tenue">
-          Sin llegadas en los próximos 90 minutos.
-        </p>
+        <p class="tenue">Sin llegadas en los próximos 90 minutos.</p>
       }
 
       <footer class="pie">
         <span>Actualizado a las {{ horaActualizado() }}</span>
-        @if (antiguedad() !== null) {
-          <span [class.rancio]="antiguedad()! > 180">
-            · feed de hace {{ antiguedad() }} s
-          </span>
-        }
-        @if (d.descartadosPorDelayAbsurdo > 0) {
-          <span class="tenue">
-            · {{ d.descartadosPorDelayAbsurdo }} descartada(s) por retraso absurdo
-          </span>
-        }
+        <span [class.rancio]="rancio()">· feed de hace {{ d.antiguedadSegundos }} s</span>
         <button type="button" (click)="refrescar()" [disabled]="cargando()">
           {{ cargando() ? 'Actualizando...' : 'Actualizar' }}
         </button>

@@ -346,7 +346,34 @@ node scripts\sincronizar.mjs                   sube el día de hoy a Supabase
 node scripts\sincronizar.mjs --seco            cuenta sin subir
 node scripts\sincronizar.mjs --todo            sube todos los días
 node scripts\extraer-ca.mjs                    si la NTA renueva el certificado
+node scripts\pruebas.mjs                       pruebas de estadoParada
 ```
+
+## Pruebas
+
+`scripts/pruebas.mjs`, y son las que son por un motivo: **todos los fallos
+serios de este proyecto han sido de interpretación del feed, no de interfaz.**
+Los SKIPPED sin `arrival` que hacían perder el delay, el `NO_DATA` que se
+propaga, los `ADDED` sin `trip_id`, la cadena TLS, el 429, el UTF-16. Ninguno
+lo habría cazado un test de navegador.
+
+Cubren dos cosas:
+
+1. Que `estadoParada` acierta en los casos de la spec, con ejemplos escritos a
+   mano donde la respuesta correcta se sabe de antemano.
+2. **Que las 4 copias de la función dicen lo mismo.** Están duplicadas en
+   `gtfsrt.mjs`, `llegadas.mjs`, `recolector.mjs` y el port a Deno de la Edge
+   Function. Se comparan las cuatro sobre las 55.352 combinaciones (trip,
+   parada) del snapshot real. Incluye la de Deno, que nunca se ejecuta en
+   local y es la que más miedo da.
+
+Eso es un parche, no la solución. **La solución es dejar una sola copia**:
+`scripts/gtfsrt.mjs` existe para eso y todavía no lo importa nadie.
+
+Para la interfaz, si algún día se añaden pruebas de navegador, que sean cuatro
+recorridos concretos (elegir parada, ver llegadas, que una `SKIPPED` diga NO
+PARA, que el aviso de datos rancios salga) y no una persecución de cobertura.
+Cobertura al 100% mide líneas ejecutadas, no aciertos.
 
 `.env` (gitignorado) necesita:
 

@@ -140,6 +140,15 @@ Deno.serve(async (_req: Request) => {
       desde += PAGINA;
     }
 
+    // 2b. Nombres de línea. El feed trae route_id crudos ("1 F1 a"); en
+    //     pantalla tiene que poner "F1". Son 403 filas, caben de una.
+    const nombreRuta = new Map<string, string>();
+    {
+      const { data, error } = await supabase.from("ruta").select("id, nombre");
+      if (error) throw new Error(`leyendo rutas: ${error.message}`);
+      for (const r of data ?? []) nombreRuta.set(r.id, r.nombre);
+    }
+
     const totalHorario = [...indice.values()].reduce((n, m) => n + m.size, 0);
     if (totalHorario === 0) {
       return Response.json({
@@ -199,8 +208,9 @@ Deno.serve(async (_req: Request) => {
         // Delays de horas son trips viejos sin purgar, no autobuses.
         if (s.delay !== null && Math.abs(s.delay) > LIMITE_DELAY_SEGUNDOS) continue;
 
+        const routeId = tu.trip.route_id ?? est.route ?? null;
         porParada.get(stopId)!.push({
-          linea: tu.trip.route_id ?? est.route ?? null,
+          linea: (routeId && nombreRuta.get(routeId)) || routeId,
           minutos,
           programado: programado.toISOString(),
           estimado: estimado.toISOString(),

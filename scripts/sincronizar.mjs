@@ -259,11 +259,42 @@ async function subirHorario(paradas) {
 
   if (!SECO) {
     await subirParadas(new Set(paradas));
+    await subirRutas();
     console.log(
       "\nActiva la recolección de esas paradas con:\n" +
         "  update parada set recolectar = true where id in (...);",
     );
   }
+}
+
+/**
+ * Catálogo de rutas. El feed trae route_id crudos ("1 F1 a"); lo que la gente
+ * conoce es "F1". Son 403 filas, se suben enteras y ya.
+ */
+async function subirRutas() {
+  const catalogo = "./indice/rutas.json";
+  if (!fs.existsSync(catalogo)) return;
+
+  const r = JSON.parse(fs.readFileSync(catalogo, "utf8"));
+  const filas = Object.entries(r).map(([id, nombre]) => ({ id, nombre }));
+
+  for (let i = 0; i < filas.length; i += LOTE) {
+    const res = await fetch(`${URL_BASE}/rest/v1/ruta?on_conflict=id`, {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify(filas.slice(i, i + LOTE)),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) {
+      throw new Error(`rutas: HTTP ${res.status} — ${(await res.text()).slice(0, 300)}`);
+    }
+  }
+  console.log(`rutas: ${filas.length} subidas`);
 }
 
 // --- Main -------------------------------------------------------------------

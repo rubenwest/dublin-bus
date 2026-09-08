@@ -179,3 +179,5 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 .pie button { margin-left: auto; }
 .rancio { color: var(--malo); font-weight: 600; }
+
+.nota-alcance { margin-top: 1.5rem; font-size: 0.78rem; line-height: 1.45; }

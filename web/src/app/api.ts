@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
+import { entorno } from './entorno';
 
 /** Estados que puede tener una llegada. Los tres últimos NO son un bus normal. */
 export type EstadoLlegada =
@@ -26,30 +27,75 @@ export interface Parada {
   nombre: string;
   lat: number | null;
   lon: number | null;
-  pasadas?: number;
 }
 
-export interface RespuestaLlegadas {
+export interface Llegadas {
   parada: Parada;
   generado: string;
-  feed: { obtenido: string | null; antiguedadSegundos: number | null };
-  descartadosPorDelayAbsurdo: number;
+  feedTs: number | null;
+  /** Segundos desde que la NTA generó el feed. Si crece, el cron está caído. */
+  antiguedadSegundos: number;
   llegadas: Llegada[];
 }
 
+/**
+ * Habla directamente con Supabase, sin backend propio.
+ *
+ * Se puede porque el cron deja las llegadas ya calculadas en `llegada_actual`:
+ * el navegador solo lee una tabla. La clave publicable está pensada para vivir
+ * en el bundle — lo que protege los datos es el RLS, que da lectura pública y
+ * ninguna escritura.
+ *
+ * Contra la API de la NTA esto NO se podría hacer: no manda ni una cabecera
+ * CORS (comprobado), y su `x-api-key` quedaría a la vista de cualquiera.
+ */
 @Injectable({ providedIn: 'root' })
 export class Api {
   private http = inject(HttpClient);
 
-  buscarParadas(q: string): Promise<Parada[]> {
-    return firstValueFrom(
-      this.http.get<Parada[]>('/api/paradas', { params: { q } }),
-    );
+  private get cabeceras() {
+    return {
+      apikey: entorno.supabaseKey,
+      Authorization: `Bearer ${entorno.supabaseKey}`,
+    };
   }
 
-  llegadas(stopId: string): Promise<RespuestaLlegadas> {
-    return firstValueFrom(
-      this.http.get<RespuestaLlegadas>(`/api/llegadas/${encodeURIComponent(stopId)}`),
+  /** Las paradas que se están recolectando. No hay datos de ninguna otra. */
+  async paradas(): Promise<Parada[]> {
+    const filas = await firstValueFrom(
+      this.http.get<any[]>(`${entorno.supabaseUrl}/rest/v1/parada`, {
+        headers: this.cabeceras,
+        params: {
+          select: 'id,nombre,lat,lon',
+          recolectar: 'eq.true',
+          order: 'nombre.asc',
+        },
+      }),
     );
+    return filas.map((f) => ({ id: f.id, nombre: f.nombre, lat: f.lat, lon: f.lon }));
+  }
+
+  async llegadas(stopId: string): Promise<Llegadas | null> {
+    const filas = await firstValueFrom(
+      this.http.get<any[]>(`${entorno.supabaseUrl}/rest/v1/llegada_actual`, {
+        headers: this.cabeceras,
+        params: {
+          select: 'stop_id,generado,feed_ts,llegadas,parada(id,nombre,lat,lon)',
+          stop_id: `eq.${stopId}`,
+        },
+      }),
+    );
+    if (!filas.length) return null;
+    const f = filas[0];
+
+    return {
+      parada: f.parada ?? { id: f.stop_id, nombre: f.stop_id, lat: null, lon: null },
+      generado: f.generado,
+      feedTs: f.feed_ts ?? null,
+      antiguedadSegundos: f.feed_ts
+        ? Math.max(0, Math.round(Date.now() / 1000 - f.feed_ts))
+        : Math.round((Date.now() - new Date(f.generado).getTime()) / 1000),
+      llegadas: (f.llegadas ?? []) as Llegada[],
+    };
   }
 }

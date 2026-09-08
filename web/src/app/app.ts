@@ -1,8 +1,8 @@
 import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
-import { Api, Llegada, Parada, RespuestaLlegadas } from './api';
+import { Api, Llegada, Llegadas, Parada } from './api';
+import { entorno } from './entorno';
 
 const CLAVE_ULTIMA = 'dublin-bus.ultima-parada';
-const REFRESCO_MS = 20_000;
 
 @Component({
   selector: 'app-root',
@@ -12,66 +12,53 @@ const REFRESCO_MS = 20_000;
 export class App implements OnDestroy {
   private api = inject(Api);
 
-  readonly consulta = signal('');
-  readonly resultados = signal<Parada[]>([]);
-  readonly buscando = signal(false);
-
+  readonly paradas = signal<Parada[]>([]);
   readonly parada = signal<Parada | null>(null);
-  readonly datos = signal<RespuestaLlegadas | null>(null);
+  readonly datos = signal<Llegadas | null>(null);
   readonly cargando = signal(false);
   readonly error = signal<string | null>(null);
   readonly actualizado = signal<Date | null>(null);
 
-  /** Segundos de antigüedad del feed. Si crece, el recolector está caído. */
-  readonly antiguedad = computed(() => this.datos()?.feed.antiguedadSegundos ?? null);
+  /**
+   * Si el feed envejece, es que el cron se ha caído. Más de tres minutos ya
+   * es raro: escribe cada minuto. Vale la pena avisar en pantalla en vez de
+   * enseñar horarios viejos como si fueran buenos.
+   */
+  readonly rancio = computed(() => (this.datos()?.antiguedadSegundos ?? 0) > 180);
 
   readonly hayLlegadas = computed(() => (this.datos()?.llegadas.length ?? 0) > 0);
 
   private temporizador: ReturnType<typeof setInterval> | null = null;
-  private debounce: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
-    const ultima = localStorage.getItem(CLAVE_ULTIMA);
-    if (ultima) {
-      try {
-        this.seleccionar(JSON.parse(ultima) as Parada);
-      } catch {
-        localStorage.removeItem(CLAVE_ULTIMA);
-      }
-    }
+    void this.cargarParadas();
   }
 
   ngOnDestroy(): void {
     this.pararRefresco();
-    if (this.debounce) clearTimeout(this.debounce);
   }
 
-  alEscribir(valor: string): void {
-    this.consulta.set(valor);
-    if (this.debounce) clearTimeout(this.debounce);
-    if (valor.trim().length < 2) {
-      this.resultados.set([]);
-      return;
-    }
-    this.debounce = setTimeout(() => void this.buscar(valor), 250);
-  }
-
-  private async buscar(valor: string): Promise<void> {
-    this.buscando.set(true);
+  private async cargarParadas(): Promise<void> {
+    this.cargando.set(true);
     try {
-      this.resultados.set(await this.api.buscarParadas(valor));
+      const lista = await this.api.paradas();
+      this.paradas.set(lista);
+
+      const ultima = localStorage.getItem(CLAVE_ULTIMA);
+      const previa = lista.find((p) => p.id === ultima);
+      if (previa) this.seleccionar(previa);
+      else if (lista.length === 1) this.seleccionar(lista[0]);
     } catch {
-      this.resultados.set([]);
+      this.error.set('No he podido cargar las paradas. ¿Hay conexión?');
     } finally {
-      this.buscando.set(false);
+      this.cargando.set(false);
     }
   }
 
   seleccionar(p: Parada): void {
     this.parada.set(p);
-    this.resultados.set([]);
-    this.consulta.set('');
-    localStorage.setItem(CLAVE_ULTIMA, JSON.stringify(p));
+    this.datos.set(null);
+    localStorage.setItem(CLAVE_ULTIMA, p.id);
     void this.refrescar();
     this.arrancarRefresco();
   }
@@ -90,10 +77,15 @@ export class App implements OnDestroy {
     this.cargando.set(true);
     this.error.set(null);
     try {
-      this.datos.set(await this.api.llegadas(p.id));
-      this.actualizado.set(new Date());
+      const d = await this.api.llegadas(p.id);
+      if (!d) {
+        this.error.set('Esta parada aún no tiene datos recogidos.');
+      } else {
+        this.datos.set(d);
+        this.actualizado.set(new Date());
+      }
     } catch {
-      this.error.set('No he podido hablar con el servidor. ¿Está arrancado?');
+      this.error.set('No he podido hablar con el servidor.');
     } finally {
       this.cargando.set(false);
     }
@@ -101,7 +93,7 @@ export class App implements OnDestroy {
 
   private arrancarRefresco(): void {
     this.pararRefresco();
-    this.temporizador = setInterval(() => void this.refrescar(), REFRESCO_MS);
+    this.temporizador = setInterval(() => void this.refrescar(), entorno.refrescoMs);
   }
 
   private pararRefresco(): void {
@@ -136,8 +128,7 @@ export class App implements OnDestroy {
       case 'SOLO_HORARIO':
         return 'sin dato en vivo, solo horario';
     }
-    const s = l.retrasoSegundos ?? 0;
-    const m = Math.round(s / 60);
+    const m = Math.round((l.retrasoSegundos ?? 0) / 60);
     if (m === 0) return 'en hora';
     return m > 0 ? `${m} min tarde` : `${Math.abs(m)} min adelantado`;
   }
@@ -152,6 +143,8 @@ export class App implements OnDestroy {
 
   horaActualizado(): string {
     const d = this.actualizado();
-    return d ? d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+    return d
+      ? d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      : '';
   }
 }
