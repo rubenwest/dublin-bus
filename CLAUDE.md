@@ -199,24 +199,51 @@ misma parada y sale la métrica de fiabilidad.
 
 ## Arquitectura prevista
 
-Lo que hay montado y funcionando en local:
+**La recolección ya NO depende de ningún PC encendido.** Vive en Supabase:
 
 ```
-                    +--> datos/obs-AAAA-MM-DD.jsonl   (histórico, crece)
-NTA GTFS-R          |
- (JSON 3MB)  -->  recolector.mjs
-              (1 llamada cada 60s,  +--> datos/ultimo-feed.json  (feed crudo)
-               el ÚNICO que llama)             |
-                                               v
-                                    servidor/api.mjs  --> Angular PWA
-                                    (0 llamadas a la NTA)   (web/)
+        pg_cron (cada minuto)
+             |
+             v
+   Edge Function `recolectar`  --1 llamada-->  NTA GTFS-R
+             |
+             +--> ingerir()       --> serie           (histórico, crece)
+             +--> llegada_actual  --> caché que sirve la web
 ```
 
-**El recolector es el único proceso que habla con la NTA.** Deja el feed crudo
-en `datos/ultimo-feed.json` (escritura atómica, tmp + rename) y el backend lo
-lee de ahí mirando el `mtime`. Así el fair usage se cumple solo, por
-construcción, da igual cuántos clientes web haya. Con `--directo` el servidor
-llama él mismo, para cuando corra sin recolector al lado.
+Esto fue el desbloqueo del proyecto. El histórico necesita semanas seguidas y
+el proyecto se usa desde varios ordenadores que se apagan; recolectar desde un
+PC no era viable. Corriendo en Supabase sale gratis (1/min son 43.200
+invocaciones al mes frente a las 500.000 del plan) y, de propina, **un proyecto
+gratuito se pausa tras una semana sin actividad pero con el cron latiendo no se
+pausa nunca**.
+
+El cron se autentica leyendo la clave secreta de Vault, así que no queda
+escrita en la definición del job:
+`cron.job` -> `net.http_post` -> `vault.decrypted_secrets`.
+
+**Ampliar paradas es un INSERT, no un despliegue**: la función lee en cada
+pasada `parada.recolectar`. Lo único que hay que hacer antes es subir su
+horario con `sincronizar.mjs --horario <parada>`.
+
+Queda además el montaje local, que sigue sirviendo para desarrollo:
+
+```
+NTA GTFS-R  -->  recolector.mjs  --> datos/obs-*.jsonl + datos/ultimo-feed.json
+                                                |
+                                                v
+                                     servidor/api.mjs --> Angular PWA (web/)
+```
+
+**Si se usa el local, el recolector es el único proceso que habla con la NTA.**
+Deja el feed crudo en `datos/ultimo-feed.json` (escritura atómica, tmp +
+rename) y el backend lo lee de ahí mirando el `mtime`. Con `--directo` el
+servidor llama él mismo. `scripts/lock.mjs` impide que corran dos a la vez.
+
+**Cuidado: el cron de Supabase y un recolector local sondean los dos.** Si se
+levanta el local mientras el cron está activo, son dos llamadas por minuto y
+vuelve el 429. Para desarrollo local, pausar el cron:
+`select cron.unschedule('recolectar-nta');`
 
 La key no puede ir en el bundle de Angular y además hay CORS: por eso el
 backend, aunque acabe siendo una función serverless.
