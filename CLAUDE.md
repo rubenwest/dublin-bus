@@ -272,6 +272,66 @@ invocación llamara a la NTA, vuelve el 429.
 4. ~~Frontend Angular + PWA~~ **HECHO**: `web/`, Angular 21 con signals.
 5. Mapa con Vehicles (opcional, decorativo).
 
+## Desplegado
+
+**https://rubenwest.github.io/dublin-bus/** — repo `rubenwest/dublin-bus`,
+público, GitHub Pages con origen *GitHub Actions*
+(`.github/workflows/desplegar.yml`).
+
+Se puede publicar como sitio estático porque la web habla directamente con
+Supabase y no necesita backend. Contra la NTA no se podría: no manda cabeceras
+CORS (comprobado) y su `x-api-key` quedaría a la vista.
+
+Dos cosas que rompen el despliegue si se olvidan, y ya mordieron:
+- Pages sirve en `/<repo>/`, no en la raíz. Sin `--base-href` correcto la
+  página sale en blanco. El workflow lo saca del nombre del repo.
+- **Hay que activar Pages ANTES de que corra el workflow.** Si no, construye
+  bien y falla al publicar con un `404` que no dice lo que pasa.
+
+## Siguiente iteración, por orden de impacto
+
+**1. Abrir a todas las paradas de Dublín.** Hoy son 3 y eso es una demo.
+Medido, y son dos costes distintos que hay que separar (`parada.recolectar`
+controla los dos y habría que partirlo en dos banderas):
+
+| Llegadas en vivo (horario, coste fijo) | Paradas | Espacio |
+|---|---|---|
+| Todo el estático | 10.181 | 462 MB |
+| Dublín y alrededores (`82*`) | 5.288 | 260 MB |
+| **Dublin Bus núcleo (`8220DB`)** | **1.877** | **122 MB** |
+
+| Histórico (`serie`, crece) | Filas/mes | Espacio/mes |
+|---|---|---|
+| 3 paradas | 0,1 M | 13 MB |
+| 20 paradas | 0,8 M | 83 MB |
+| 100 paradas | 4,2 M | 417 MB |
+
+Medido: **1.389 tramos por parada y día**. El plan gratuito son 500 MB en
+total. Conclusión: **llegadas en vivo, anchas; histórico, estrecho.**
+
+Requiere **darle la vuelta al bucle** de la Edge Function: hoy recorre
+*paradas → trips* y con 1.877 paradas cargaría 2 M de filas por minuto.
+Recorriendo *trips en vivo → sus paradas* son ~2.800 trips × ~35 paradas ≈
+98.000 filas, y salen las llegadas de todo Dublín de una pasada. Más barato
+que ahora y 600 veces más cobertura. Y **no cuesta ni una llamada más a la
+NTA**: el feed ya viene entero.
+
+**2. Geolocalización.** "Cerca de mí" como pantalla inicial. Ya guardamos
+`lat`/`lon` en `parada`. Es la diferencia entre una web y algo que se usa.
+Con 1.877 paradas, la lista actual deja de servir; hace falta además buscar
+por nombre **mostrando las líneas de cada parada** (hay siete "O'Connell St")
+y favoritas en `localStorage`.
+
+**3. Pausar el refresco con la pestaña oculta** (ahora consume batería y datos
+en el bolsillo) y un estado offline honesto: hoy sin cobertura se queda en
+"Cargando" para siempre en vez de decir de cuándo son los datos.
+
+## Móvil, comprobado a 375 px
+
+Sin desbordamiento horizontal, sin texto cortado, fuente base 16 px (por
+debajo iOS hace zoom al enfocar un campo), tema claro/oscuro automático, PWA
+instalable, zonas táctiles de 44 px.
+
 Cuántos días hacen falta de verdad, medido sobre las tres paradas actuales: el
 tamaño de muestra por día lo fija el horario, no la frecuencia de sondeo
 (sondear más a menudo da más fotos del mismo autobús, no más autobuses). Con
