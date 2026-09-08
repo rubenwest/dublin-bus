@@ -1,10 +1,8 @@
 /**
  * Recolector, versión Edge Function.
  *
- * Sustituye al recolector que corría en un PC. Esto vive en la
- * infraestructura de Supabase, así que recolecta 24/7 sin que haya que dejar
- * ningún ordenador encendido ni preocuparse de en qué cuenta de Windows
- * estamos. Lo dispara pg_cron cada minuto.
+ * Vive en la infraestructura de Supabase, así que recolecta 24/7 sin que haya
+ * que dejar ningún ordenador encendido. Lo dispara pg_cron cada minuto.
  *
  * Sigue siendo el ÚNICO que llama a la NTA: el fair usage es de una llamada
  * cada 30-60s para todos los usuarios juntos, y dos procesos sondeando a la
@@ -15,17 +13,19 @@
  *   2. Reescribe `llegada_actual` -> lo que sirve la web, sin tocar la NTA.
  *
  * Secreto que necesita: NTA_API_KEY
- *   supabase secrets set NTA_API_KEY=...
- *   o el panel: Project Settings > Edge Functions > Secrets
  */
 
+// @ts-nocheck  -- gtfsrt.mjs es JavaScript plano, sin tipos.
 import { createClient } from "jsr:@supabase/supabase-js@2";
+// Es el MISMO fichero que scripts/gtfsrt.mjs, copiado byte a byte porque una
+// Edge Function no puede importar del repo. No editar aquí: editar el de
+// scripts y volver a copiar. scripts/pruebas.mjs compara los hashes.
 import {
   estadoParada,
   fechaISO,
   LIMITE_DELAY_SEGUNDOS,
   momentoProgramado,
-} from "./gtfsrt.ts";
+} from "./gtfsrt.mjs";
 
 const FEED_URL =
   "https://api.nationaltransport.ie/gtfsr/v2/TripUpdates?format=json";
@@ -33,22 +33,22 @@ const FEED_URL =
 const TIMEOUT_MS = 40_000;
 const REINTENTOS = 4;
 /** Ventana de llegadas que se guarda en la caché. */
-const VENTANA_MIN: [number, number] = [-2, 90];
+const VENTANA_MIN = [-2, 90];
 
 const NTA_API_KEY = Deno.env.get("NTA_API_KEY");
 
 const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  Deno.env.get("SUPABASE_URL"),
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
 );
 
 /**
- * undici y Deno esconden el motivo real del fallo en `cause`. Sin esto solo
- * se ve "error sending request", que no dice nada.
+ * Deno esconde el motivo real del fallo en `cause`. Sin esto solo se ve
+ * "error sending request", que no dice nada.
  */
-function detallar(err: unknown): string {
-  const partes: string[] = [];
-  let e: any = err;
+function detallar(err) {
+  const partes = [];
+  let e = err;
   let nivel = 0;
   while (e && nivel < 5) {
     partes.push(`${e.name ?? "Error"}: ${e.message ?? e}${e.code ? ` [${e.code}]` : ""}`);
@@ -62,21 +62,21 @@ function detallar(err: unknown): string {
  * La NTA sirve la cadena TLS incompleta desde la mitad de sus nodos de
  * balanceo (mandan la hoja sin el intermedio de GoDaddy). Medido en Node:
  * 6 de 12 conexiones fallaban. Deno tampoco implementa AIA, así que aquí
- * pasa lo mismo y los reintentos no son un lujo: son el arreglo.
+ * podría pasar lo mismo y los reintentos no son un lujo.
  */
-async function pedirFeed(): Promise<{ feed: any; intentos: number }> {
-  let ultimo: unknown;
+async function pedirFeed() {
+  let ultimo;
 
   for (let intento = 1; intento <= REINTENTOS; intento++) {
     try {
       const res = await fetch(FEED_URL, {
-        headers: { "x-api-key": NTA_API_KEY!, "Cache-Control": "no-cache" },
+        headers: { "x-api-key": NTA_API_KEY, "Cache-Control": "no-cache" },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
 
       if (!res.ok) {
         const cuerpo = await res.text().catch(() => "");
-        const e: any = new Error(
+        const e = new Error(
           `HTTP ${res.status} ${res.statusText}${cuerpo ? ` — ${cuerpo.slice(0, 200)}` : ""}`,
         );
         e.estado = res.status;
@@ -88,7 +88,7 @@ async function pedirFeed(): Promise<{ feed: any; intentos: number }> {
       return { feed: await res.json(), intentos: intento };
     } catch (err) {
       ultimo = err;
-      if ((err as any)?.fatal || intento === REINTENTOS) break;
+      if (err?.fatal || intento === REINTENTOS) break;
       const espera = Math.round(1000 * 2 ** (intento - 1) * (0.5 + Math.random()));
       console.warn(`intento ${intento} falló, reintento en ${espera}ms: ${detallar(err)}`);
       await new Promise((r) => setTimeout(r, espera));
@@ -98,7 +98,7 @@ async function pedirFeed(): Promise<{ feed: any; intentos: number }> {
   throw ultimo;
 }
 
-Deno.serve(async (_req: Request) => {
+Deno.serve(async (_req) => {
   const t0 = Date.now();
 
   if (!NTA_API_KEY) {
@@ -120,7 +120,7 @@ Deno.serve(async (_req: Request) => {
     const ids = paradas.map((p) => p.id);
 
     // 2. Horario estático de esas paradas: trip_id -> {seq, prog_segs}
-    const indice = new Map<string, Map<string, { seq: number; prog: number; route: string | null }>>();
+    const indice = new Map();
     for (const id of ids) indice.set(id, new Map());
 
     const PAGINA = 1000;
@@ -142,7 +142,7 @@ Deno.serve(async (_req: Request) => {
 
     // 2b. Nombres de línea. El feed trae route_id crudos ("1 F1 a"); en
     //     pantalla tiene que poner "F1". Son 403 filas, caben de una.
-    const nombreRuta = new Map<string, string>();
+    const nombreRuta = new Map();
     {
       const { data, error } = await supabase.from("ruta").select("id, nombre");
       if (error) throw new Error(`leyendo rutas: ${error.message}`);
@@ -165,8 +165,8 @@ Deno.serve(async (_req: Request) => {
     const ahora = new Date();
 
     // 4. Cruce
-    const observaciones: unknown[] = [];
-    const porParada = new Map<string, any[]>();
+    const observaciones = [];
+    const porParada = new Map();
     for (const id of ids) porParada.set(id, []);
 
     for (const e of feed.entity ?? []) {
@@ -200,7 +200,7 @@ Deno.serve(async (_req: Request) => {
 
         // Para la caché que sirve la web
         const programado = momentoProgramado(startDate, est.prog);
-        const estimado = s.horaAbs !== null
+        const estimado = s.horaAbs !== null && s.horaAbs !== undefined
           ? new Date(s.horaAbs * 1000)
           : new Date(programado.getTime() + (s.delay ?? 0) * 1000);
         const minutos = Math.round((estimado.getTime() - ahora.getTime()) / 60000);
@@ -209,7 +209,7 @@ Deno.serve(async (_req: Request) => {
         if (s.delay !== null && Math.abs(s.delay) > LIMITE_DELAY_SEGUNDOS) continue;
 
         const routeId = tu.trip.route_id ?? est.route ?? null;
-        porParada.get(stopId)!.push({
+        porParada.get(stopId).push({
           linea: (routeId && nombreRuta.get(routeId)) || routeId,
           minutos,
           programado: programado.toISOString(),

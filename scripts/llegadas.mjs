@@ -16,6 +16,11 @@
 import fs from 'node:fs';
 import readline from 'node:readline';
 import { cargarDotEnv } from './entorno.mjs';
+import {
+  estadoParada,
+  momentoProgramado,
+  LIMITE_DELAY_SEGUNDOS,
+} from './gtfsrt.mjs';
 
 cargarDotEnv();
 
@@ -104,102 +109,18 @@ function horaGtfsASegundos(hhmmss) {
   return h * 3600 + m * 60 + s;
 }
 
-/** start_date "20260904" + segundos desde medianoche -> Date en hora de Irlanda */
-function momentoProgramado(startDate, segundos) {
-  const y = +startDate.slice(0, 4);
-  const mo = +startDate.slice(4, 6);
-  const d = +startDate.slice(6, 8);
-
-  // Medianoche local de ese día de servicio, resuelta vía el offset real de Dublín
-  const tentativo = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0));
-  const offsetMin = offsetDublinEnMinutos(tentativo);
-  const medianocheUtc = Date.UTC(y, mo - 1, d, 0, 0, 0) - offsetMin * 60_000;
-
-  return new Date(medianocheUtc + segundos * 1000);
-}
-
-function offsetDublinEnMinutos(fecha) {
-  const fmt = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Dublin',
-    timeZoneName: 'longOffset',
-  });
-  const parte = fmt.formatToParts(fecha).find(p => p.type === 'timeZoneName').value;
-  const m = parte.match(/GMT([+-])(\d{2}):(\d{2})/);
-  if (!m) return 0;
-  return (m[1] === '-' ? -1 : 1) * (+m[2] * 60 + +m[3]);
-}
+// momentoProgramado y offsetDublinEnMinutos viven en gtfsrt.mjs.
 
 // ---------------------------------------------------------------------------
 // 4. Regla clave: el delay se propaga hacia adelante
 // ---------------------------------------------------------------------------
 
-/**
- * Los stop_time_update vienen salteados (16,17,18,20,23,27...). Según la spec
- * de GTFS-RT, el delay de una parada aplica a las siguientes hasta que aparece
- * otro update. Así que partimos del último update con secuencia <= la nuestra.
- *
- * Pero no basta con sacar el delay: hay que mirar el schedule_relationship del
- * update aplicable, porque cambia el significado.
- *
- *  - NO_DATA se propaga hacia adelante y prohíbe que haya delay: el operador
- *    dice explícitamente "de aquí en adelante no sé nada".
- *  - SKIPPED NO se propaga, aplica solo a su parada. Si es la nuestra, el bus
- *    no para: mostrarlo como una llegada normal es el peor bug del proyecto.
- *    Si es de una parada anterior, a nosotros no nos afecta — pero el delay sí
- *    atraviesa la parada saltada, y los SKIPPED del feed de la NTA vienen sin
- *    arrival ni departure, así que hay que seguir hacia atrás a buscarlo.
- *
- * Devuelve { rel, delay, horaAbs, origen }.
- */
-function estadoParada(stopTimeUpdates, secuenciaObjetivo) {
-  // Updates aplicables (seq <= objetivo), del más cercano al más lejano.
-  const previos = (stopTimeUpdates ?? [])
-    .map(u => ({ u, seq: Number(u.stop_sequence) }))
-    .filter(x => !Number.isNaN(x.seq) && x.seq <= secuenciaObjetivo)
-    .sort((a, b) => b.seq - a.seq);
-
-  if (!previos.length) return { rel: 'SIN_UPDATE', delay: null, horaAbs: null };
-
-  const cercano = previos[0];
-  const relCercano = cercano.u.schedule_relationship ?? 'SCHEDULED';
-
-  if (relCercano === 'NO_DATA') {
-    return { rel: 'NO_DATA', delay: null, horaAbs: null, origen: cercano.seq };
-  }
-
-  const saltada = relCercano === 'SKIPPED' && cercano.seq === secuenciaObjetivo;
-
-  let delay = null, horaAbs = null, origen = null;
-  for (const { u, seq } of previos) {
-    if ((u.schedule_relationship ?? 'SCHEDULED') === 'NO_DATA') break;
-    const d = u.arrival?.delay ?? u.departure?.delay;
-    const t = u.arrival?.time ?? u.departure?.time;
-    if (d !== undefined) {
-      delay = Number(d);
-      origen = seq;
-      if (t !== undefined) horaAbs = Number(t);
-      break;
-    }
-    if (t !== undefined && horaAbs === null) {
-      // Algunos updates traen hora absoluta y ningún delay. Es minoritario
-      // (~1% en el feed real), pero cuando está es más fiable que sumar.
-      horaAbs = Number(t);
-      origen = seq;
-    }
-  }
-
-  if (saltada) return { rel: 'SKIPPED', delay, horaAbs, origen: cercano.seq };
-  if (delay === null && horaAbs === null) {
-    return { rel: 'SIN_UPDATE', delay: null, horaAbs: null, origen: cercano.seq };
-  }
-  return { rel: 'SCHEDULED', delay, horaAbs, origen };
-}
+// estadoParada vive en gtfsrt.mjs: es la logica mas delicada del
+// proyecto y tener copias ya costo un bug.
 
 // ---------------------------------------------------------------------------
 // 5. Main
 // ---------------------------------------------------------------------------
-
-const LIMITE_DELAY_SEGUNDOS = 3 * 3600; // por encima de esto, sospechoso
 
 async function main() {
   const feed = await cargarFeed();

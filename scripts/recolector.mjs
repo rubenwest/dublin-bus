@@ -19,6 +19,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { cargarDotEnv } from "./entorno.mjs";
 import { tomarLock } from "./lock.mjs";
+import { estadoParada } from "./gtfsrt.mjs";
 
 // Se rellena al arrancar, justo antes de indexar. Declarado aquí arriba para
 // que el handler de "exit" pueda soltarlo aunque salgamos antes de tomarlo.
@@ -253,64 +254,8 @@ async function pedirFeed() {
 
 // --- Lógica de delay --------------------------------------------------------
 
-/**
- * Estado de una parada según los stop_time_update, que vienen salteados
- * (16, 17, 18, 20, 23, 27...). Reglas de la spec:
- *
- *  - un update aplica a las paradas siguientes hasta el próximo update;
- *  - NO_DATA se propaga hacia adelante y prohíbe que haya delay;
- *  - SKIPPED NO se propaga: aplica solo a su parada. Pero el delay sí
- *    atraviesa una parada saltada, y los SKIPPED de la NTA vienen sin arrival
- *    ni departure, así que hay que seguir hacia atrás hasta encontrarlo.
- */
-function estadoParada(ups, seqObjetivo) {
-  // Updates aplicables (seq <= objetivo), del más cercano al más lejano.
-  const previos = (ups ?? [])
-    .map((u) => ({ u, seq: Number(u.stop_sequence) }))
-    .filter((x) => !Number.isNaN(x.seq) && x.seq <= seqObjetivo)
-    .sort((a, b) => b.seq - a.seq);
-
-  if (!previos.length) return { rel: "SIN_UPDATE" };
-
-  const cercano = previos[0];
-  const relCercano = cercano.u.schedule_relationship ?? "SCHEDULED";
-
-  // NO_DATA se propaga: si el update vigente es NO_DATA, no hay delay válido.
-  if (relCercano === "NO_DATA") return { rel: "NO_DATA", origen: cercano.seq };
-
-  // SKIPPED solo aplica a su propia parada.
-  const saltada = relCercano === "SKIPPED" && cercano.seq === seqObjetivo;
-
-  // El delay se hereda del update aplicable más cercano que traiga uno,
-  // atravesando paradas saltadas (que vienen sin arrival/departure).
-  let delay = null,
-    origen = null,
-    horaAbs = null;
-  for (const { u, seq } of previos) {
-    const rel = u.schedule_relationship ?? "SCHEDULED";
-    if (rel === "NO_DATA") break; // hacia atrás tampoco vale
-    const d = u.arrival?.delay ?? u.departure?.delay;
-    const t = u.arrival?.time ?? u.departure?.time;
-    if (d !== undefined) {
-      delay = Number(d);
-      origen = seq;
-      if (t !== undefined) horaAbs = Number(t);
-      break;
-    }
-    if (t !== undefined && horaAbs === null) {
-      // Algunos updates traen hora absoluta y ningún delay (~1% de los
-      // SCHEDULED). Nos la guardamos por si no aparece ningún delay.
-      horaAbs = Number(t);
-      origen = seq;
-    }
-  }
-
-  if (saltada) return { rel: "SKIPPED", origen: cercano.seq, delay, horaAbs };
-  if (delay === null && horaAbs === null)
-    return { rel: "SIN_UPDATE", origen: cercano.seq };
-
-  return { rel: "SCHEDULED", origen, delay, horaAbs };
-}
+// estadoParada vive en gtfsrt.mjs. Es la lógica más delicada del proyecto y
+// tenerla duplicada ya costó un bug: los SKIPPED sin arrival.
 
 // --- Sondeo -----------------------------------------------------------------
 

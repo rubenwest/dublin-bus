@@ -357,18 +357,29 @@ Los SKIPPED sin `arrival` que hacían perder el delay, el `NO_DATA` que se
 propaga, los `ADDED` sin `trip_id`, la cadena TLS, el 429, el UTF-16. Ninguno
 lo habría cazado un test de navegador.
 
-Cubren dos cosas:
+Cubren tres cosas:
 
-1. Que `estadoParada` acierta en los casos de la spec, con ejemplos escritos a
+1. **Que sigue habiendo una sola copia.** Llegó a haber cuatro y ya derivaron
+   una vez. Ahora `scripts/gtfsrt.mjs` es la única, y `llegadas.mjs`,
+   `recolector.mjs` y el backend la importan. La prueba falla si vuelve a
+   aparecer un `function estadoParada` suelto.
+2. Que `estadoParada` acierta en los casos de la spec, con ejemplos escritos a
    mano donde la respuesta correcta se sabe de antemano.
-2. **Que las 4 copias de la función dicen lo mismo.** Están duplicadas en
-   `gtfsrt.mjs`, `llegadas.mjs`, `recolector.mjs` y el port a Deno de la Edge
-   Function. Se comparan las cuatro sobre las 55.352 combinaciones (trip,
-   parada) del snapshot real. Incluye la de Deno, que nunca se ejecuta en
-   local y es la que más miedo da.
+3. Que no revienta sobre las 55.352 combinaciones (trip, parada) del snapshot
+   real, y que sigue detectando las 411 paradas `SKIPPED` que contiene.
 
-Eso es un parche, no la solución. **La solución es dejar una sola copia**:
-`scripts/gtfsrt.mjs` existe para eso y todavía no lo importa nadie.
+**El espejo de la Edge Function.** Una Edge Function no puede importar del
+repo, así que `supabase/functions/recolectar/gtfsrt.mjs` es una copia **byte a
+byte** de `scripts/gtfsrt.mjs`. No se edita a mano: se edita el de `scripts` y
+se copia encima. La prueba compara los **hashes SHA-256**, no el
+comportamiento: dos ficheros pueden coincidir hoy sobre el snapshot y diferir
+mañana en un caso que no cubra.
+
+```
+copy scripts\gtfsrt.mjs supabase\functions\recolectar\
+```
+
+Y luego hay que volver a desplegar la función.
 
 Para la interfaz, si algún día se añaden pruebas de navegador, que sean cuatro
 recorridos concretos (elegir parada, ver llegadas, que una `SKIPPED` diga NO
