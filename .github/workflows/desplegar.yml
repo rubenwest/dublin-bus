@@ -1,0 +1,76 @@
+# Construye la web y la publica en GitHub Pages.
+#
+# La app es estática y habla directamente con Supabase, así que no hace falta
+# ningún servidor: eso es lo que permite publicarla aquí. Contra la API de la
+# NTA no se podría (no manda cabeceras CORS y su x-api-key quedaría a la vista).
+#
+# No hay secretos que inyectar: la clave de Supabase que usa el navegador es la
+# publicable, diseñada para vivir en el bundle. Lo que protege los datos es el
+# RLS: lectura pública y ninguna política de escritura.
+
+name: Desplegar web
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/desplegar.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Si se empujan dos commits seguidos, que el segundo cancele al primero en vez
+# de pelearse por publicar.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  construir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Instalar dependencias
+        working-directory: web
+        run: npm ci
+
+      - name: Pruebas de la lógica del feed
+        run: node scripts/pruebas.mjs
+
+      # GitHub Pages sirve el sitio en /<nombre-del-repo>/, no en la raíz. Sin
+      # el base-href correcto, el bundle y el service worker se buscan en / y
+      # la página sale en blanco. Se toma del nombre del repo para que no se
+      # rompa si algún día se renombra.
+      - name: Construir
+        working-directory: web
+        run: npm run build -- --base-href "/${{ github.event.repository.name }}/"
+
+      # Pages sirve ficheros tal cual, sin fallback de SPA. Copiar index.html a
+      # 404.html hace que cualquier ruta desconocida cargue la app igualmente.
+      - name: Fallback de rutas
+        run: cp web/dist/web/browser/index.html web/dist/web/browser/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist/web/browser
+
+  publicar:
+    needs: construir
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    steps:
+      - id: despliegue
+        uses: actions/deploy-pages@v4
