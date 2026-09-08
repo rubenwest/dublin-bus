@@ -52,9 +52,33 @@
     }
 
     @if (datos(); as d) {
-      @if (hayLlegadas()) {
+      @if (lineas().length > 1) {
+        <div class="filtro" data-test="filtro" role="group" aria-label="Filtrar por línea">
+          <button
+            type="button"
+            class="chip"
+            [class.activo]="!lineasElegidas().length"
+            [attr.aria-pressed]="!lineasElegidas().length"
+            (click)="verTodas()">
+            Todas
+          </button>
+          @for (linea of lineas(); track linea) {
+            <button
+              type="button"
+              class="chip"
+              data-test="chip-linea"
+              [class.activo]="elegida(linea)"
+              [attr.aria-pressed]="elegida(linea)"
+              (click)="alternarLinea(linea)">
+              {{ linea }}
+            </button>
+          }
+        </div>
+      }
+
+      @if (llegadasVisibles().length) {
         <ul class="llegadas" data-test="llegadas">
-          @for (l of d.llegadas; track l.tripId + l.programado) {
+          @for (l of llegadasVisibles(); track l.tripId + l.programado) {
             <li
               class="llegada"
               [attr.data-estado]="l.estado"
@@ -66,12 +90,25 @@
                 {{ cuando(l) }}<small>{{ unidad(l) }}</small>
               </span>
               <span class="detalle">
-                <span class="prog">{{ horaProgramada(l) }}</span>
-                <span class="nota">{{ nota(l) }}</span>
+                <span class="hora">{{ horaLlegada(l) }}</span>
+                <span class="nota">{{ detalle(l) }}</span>
               </span>
             </li>
           }
         </ul>
+
+        @if (recortadas() > 0 || sinTope()) {
+          <p class="tope">
+            <button type="button" class="enlace" data-test="tope" (click)="alternarTope()">
+              {{ textoTope() }}
+            </button>
+          </p>
+        }
+      } @else if (filtradasTodas()) {
+        <p class="tenue">
+          Ninguna de las líneas elegidas llega en los próximos 90 minutos.
+          <button type="button" class="enlace" (click)="verTodas()">Ver todas</button>
+        </p>
       } @else {
         <p class="tenue">Sin llegadas en los próximos 90 minutos.</p>
       }

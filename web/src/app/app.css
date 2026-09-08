@@ -95,6 +95,49 @@ button:disabled { opacity: 0.5; cursor: default; }
 .resultados .nombre { font-weight: 500; }
 .resultados .codigo { margin: 0; }
 
+/* --- Filtro por línea ---------------------------------------------------- */
+
+/* Los chips van en fila y se envuelven. En una parada con siete líneas esto
+   ocupa dos filas; se prefiere eso a un desplegable, que obliga a abrir, leer
+   y elegir con el bus entrando. */
+.filtro {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+
+.chip {
+  /* El alto de 44px lo hereda de `button`; el ancho no, y un chip corto como
+     "E2" se quedaba en 41. Los 44 de las WCAG son en las dos direcciones. */
+  min-width: 44px;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* El texto del chip activo es el color del fondo de la página, no blanco fijo:
+   en claro sale blanco sobre azul y en oscuro sale casi negro sobre azul
+   claro. Blanco fijo se quedaba en 2:1 de contraste con el tema oscuro. */
+.chip.activo {
+  border-color: var(--acento);
+  background: var(--acento);
+  color: var(--fondo);
+}
+
+/* El botón de "ver todas" va dentro de una frase: que no parezca un botón
+   de barra, sino la continuación del texto. */
+.enlace {
+  border: none;
+  background: none;
+  padding: 0 0.25rem;
+  min-height: 0;
+  color: var(--acento);
+  text-decoration: underline;
+}
+
 /* --- Llegadas ------------------------------------------------------------ */
 
 .llegadas {
@@ -144,7 +187,16 @@ button:disabled { opacity: 0.5; cursor: default; }
   font-size: 0.8rem;
   line-height: 1.35;
 }
-.prog { color: var(--tenue); }
+
+/* La hora de llegada estimada: es el dato, no el comentario, así que pesa más
+   que la nota que lleva debajo. Por debajo de los minutos, que siguen siendo
+   lo primero que se mira. */
+.hora {
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.nota { color: var(--tenue); }
 
 /* Una parada saltada no es una llegada. Que no se pueda confundir. */
 .llegada.saltada {
@@ -159,7 +211,8 @@ button:disabled { opacity: 0.5; cursor: default; }
 .llegada.saltada .nota { color: var(--malo); }
 
 .llegada.cancelada .linea,
-.llegada.cancelada .minutos {
+.llegada.cancelada .minutos,
+.llegada.cancelada .hora {
   text-decoration: line-through;
   opacity: 0.55;
 }
@@ -171,6 +224,11 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 
 .llegada.sin-vivo .minutos { opacity: 0.6; }
+
+.tope {
+  margin: 0.7rem 0 0;
+  font-size: 0.8rem;
+}
 
 /* --- Pie ----------------------------------------------------------------- */
 
