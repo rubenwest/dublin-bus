@@ -27,6 +27,7 @@
         @for (p of favoritasParadas(); track p.id) {
           <li>
             <button type="button" data-test="parada" (click)="seleccionar(p)">
+              <span class="sprite" [class.tram]="esTram(p)" aria-hidden="true"></span>
               <span class="info">
                 <span class="nombre">{{ p.nombre }}</span>
                 @if (p.lineas.length) {
@@ -57,6 +58,7 @@
         @for (p of resultados(); track p.id) {
           <li>
             <button type="button" data-test="parada" (click)="seleccionar(p)">
+              <span class="sprite" [class.tram]="esTram(p)" aria-hidden="true"></span>
               <span class="info">
                 <span class="nombre">{{ p.nombre }}</span>
                 @if (p.lineas.length) {

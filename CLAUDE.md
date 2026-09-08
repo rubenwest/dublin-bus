@@ -16,7 +16,10 @@ Si el proyecto se queda en "muestro los minutos", no aporta nada.
 **Al día 2026-09-08: 338 paradas en vivo (el centro de Dublín), histórico en 3.**
 La web ya no lista paradas a pelo: hay buscador por nombre o línea, chips con
 las líneas de cada parada (que es lo que distingue las siete "O'Connell St") y
-favoritas en `localStorage`.
+favoritas en `localStorage`. Cada resultado lleva un sprite pixel-art (8-bit)
+que distingue bus de tranvía: bus si el id empieza por otra cosa, Luas (magenta,
+con pantógrafo) si empieza por `8220GA`. Los sprites son SVG inline en `app.css`
+como data-URI, con colores fijos que leen en claro y oscuro.
 
 
 - Cuenta creada en developer.nationaltransport.ie, suscrito al producto

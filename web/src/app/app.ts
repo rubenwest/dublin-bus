@@ -203,6 +203,16 @@ export class App implements OnDestroy {
   }
 
   /**
+   * El Luas (tranvía) vive en el espacio de ids `8220GA*`, con líneas Red y
+   * Green; todo lo demás del feed es autobús. Sirve para pintar el sprite de
+   * tranvía en vez del de bus. Que el feed traiga Luas fue una sorpresa: el
+   * CLAUDE.md decía "solo autobuses" y era falso.
+   */
+  esTram(p: Parada): boolean {
+    return p.id.startsWith('8220GA');
+  }
+
+  /**
    * La estrella vive dentro del botón de la parada; sin parar la propagación,
    * marcar favorita seleccionaría la parada y saltaría a sus llegadas.
    */
