@@ -31,8 +31,27 @@ const args = process.argv.slice(2);
 const SECO = args.includes("--seco");
 const TODO = args.includes("--todo");
 const HORARIO = args.includes("--horario");
+const CENTRO = args.includes("--centro");
 const DIA = args.includes("--dia") ? args[args.indexOf("--dia") + 1] : null;
 const datosDir = "./datos";
+
+/**
+ * Caja del centro de Dublín por defecto: de Parnell Sq bajando por O'Connell,
+ * cruzando el Liffey, College Green, Dame St y hasta St Stephen's Green.
+ * Ajustable con  --caja <latMin> <latMax> <lonMin> <lonMax>.
+ */
+const CAJA_CENTRO = { latMin: 53.335, latMax: 53.36, lonMin: -6.29, lonMax: -6.24 };
+
+function leerCaja() {
+  const i = args.indexOf("--caja");
+  if (i === -1) return CAJA_CENTRO;
+  const [latMin, latMax, lonMin, lonMax] = args.slice(i + 1, i + 5).map(Number);
+  if ([latMin, latMax, lonMin, lonMax].some((n) => Number.isNaN(n))) {
+    console.error("Uso: --caja <latMin> <latMax> <lonMin> <lonMax>  (grados decimales)");
+    process.exit(1);
+  }
+  return { latMin, latMax, lonMin, lonMax };
+}
 
 const URL_BASE = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -268,6 +287,128 @@ async function subirHorario(paradas) {
 }
 
 /**
+ * Upsert genérico en lotes contra PostgREST. Comparte cabeceras y el troceado
+ * de LOTE con el resto; se creó para `subirCentro`, que sube dos tablas.
+ */
+async function upsertLotes(tabla, onConflict, filas, timeoutMs = 60_000) {
+  for (let i = 0; i < filas.length; i += LOTE) {
+    const res = await fetch(`${URL_BASE}/rest/v1/${tabla}?on_conflict=${onConflict}`, {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify(filas.slice(i, i + LOTE)),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      throw new Error(`${tabla}: HTTP ${res.status} — ${(await res.text()).slice(0, 300)}`);
+    }
+  }
+}
+
+/**
+ * Da de alta de golpe todas las paradas de una caja geográfica (el centro por
+ * defecto) para LLEGADAS EN VIVO. Lee el índice, no el estático crudo:
+ *   - indice/paradas.json      -> qué paradas caen en la caja (id, nombre, lat, lon)
+ *   - indice/paradas/<id>.jsonl -> [trip_id, seq, prog] de cada parada (el horario)
+ *   - indice/trip-ruta.json    -> trip_id -> route_id, para poner route_id y líneas
+ *   - indice/rutas.json        -> route_id -> nombre corto, para los chips del buscador
+ *
+ * Marca `en_vivo = true`, NO `recolectar`: el histórico se queda estrecho. Sube
+ * también `route_id` en el horario y las `lineas` de cada parada, que la versión
+ * vieja de --horario no ponía.
+ */
+async function subirCentro() {
+  const caja = leerCaja();
+  const catalogoP = "./indice/paradas.json";
+  for (const f of [catalogoP, "./indice/trip-ruta.json", "./indice/rutas.json"]) {
+    if (!fs.existsSync(f)) {
+      console.error(`Falta ${f}. Corre antes: node scripts/indexar.mjs ./gtfs ./indice`);
+      process.exit(1);
+    }
+  }
+
+  const catalogo = JSON.parse(fs.readFileSync(catalogoP, "utf8"));
+  const tripRuta = JSON.parse(fs.readFileSync("./indice/trip-ruta.json", "utf8"));
+  const rutas = JSON.parse(fs.readFileSync("./indice/rutas.json", "utf8"));
+
+  const dentro = catalogo.filter(
+    (p) =>
+      p.lat != null && p.lon != null &&
+      p.lat >= caja.latMin && p.lat <= caja.latMax &&
+      p.lon >= caja.lonMin && p.lon <= caja.lonMax,
+  );
+
+  console.log(
+    `Caja lat[${caja.latMin}, ${caja.latMax}] lon[${caja.lonMin}, ${caja.lonMax}]\n` +
+      `${dentro.length} paradas dentro (de ${catalogo.length} con servicio).`,
+  );
+  if (!dentro.length) {
+    console.error("Ninguna parada en la caja. ¿Coordenadas al revés?");
+    process.exit(1);
+  }
+
+  const horarioFilas = [];
+  const paradaFilas = [];
+  let sinFichero = 0;
+
+  for (const p of dentro) {
+    const f = path.join("./indice/paradas", `${p.id}.jsonl`);
+    if (!fs.existsSync(f)) {
+      sinFichero++;
+      continue;
+    }
+    // La PK del horario es (stop_id, trip_id); una circular puede repetir trip.
+    const porTrip = new Map();
+    const lineas = new Set();
+    for (const linea of fs.readFileSync(f, "utf8").split("\n")) {
+      if (!linea.trim()) continue;
+      const [tripId, seq, prog] = JSON.parse(linea);
+      const routeId = tripRuta[tripId] ?? null;
+      porTrip.set(tripId, {
+        stop_id: p.id, trip_id: tripId, seq, prog_segs: prog, route_id: routeId,
+      });
+      if (routeId && rutas[routeId]) lineas.add(rutas[routeId]);
+    }
+    for (const fila of porTrip.values()) horarioFilas.push(fila);
+    paradaFilas.push({
+      id: p.id,
+      nombre: p.n,
+      lat: p.lat,
+      lon: p.lon,
+      en_vivo: true,
+      lineas: [...lineas].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+    });
+  }
+
+  const totalLineas = paradaFilas.reduce((n, p) => n + p.lineas.length, 0);
+  console.log(
+    `  ${paradaFilas.length} paradas con horario, ${horarioFilas.length} filas de horario, ` +
+      `${(totalLineas / (paradaFilas.length || 1)).toFixed(1)} líneas/parada de media.` +
+      (sinFichero ? `  (${sinFichero} sin fichero en el índice, saltadas)` : ""),
+  );
+
+  if (SECO) {
+    console.log("[SECO] no se ha subido nada. Repite sin --seco para dar el alta.");
+    return;
+  }
+
+  await subirRutas();
+  process.stdout.write("  subiendo horario...");
+  await upsertLotes("horario", "stop_id,trip_id", horarioFilas);
+  process.stdout.write(" hecho\n  subiendo paradas...");
+  await upsertLotes("parada", "id", paradaFilas);
+  process.stdout.write(" hecho\n");
+  console.log(
+    `\nAlta completa: ${paradaFilas.length} paradas en vivo en el centro.\n` +
+      "La Edge Function las recogerá en la próxima pasada del cron (cada minuto).",
+  );
+}
+
+/**
  * Catálogo de rutas. El feed trae route_id crudos ("1 F1 a"); lo que la gente
  * conoce es "F1". Son 403 filas, se suben enteras y ya.
  */
@@ -298,6 +439,11 @@ async function subirRutas() {
 }
 
 // --- Main -------------------------------------------------------------------
+
+if (CENTRO) {
+  await subirCentro();
+  process.exit(0);
+}
 
 if (HORARIO) {
   const paradas = args.filter((a) => /^[0-9]{4}[A-Z]{2}/i.test(a));

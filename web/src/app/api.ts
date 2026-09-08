@@ -27,6 +27,8 @@ export interface Parada {
   nombre: string;
   lat: number | null;
   lon: number | null;
+  /** Líneas que pasan por la parada, para distinguir las 7 "O'Connell St". */
+  lineas: string[];
 }
 
 export interface Llegadas {
@@ -60,19 +62,25 @@ export class Api {
     };
   }
 
-  /** Las paradas que se están recolectando. No hay datos de ninguna otra. */
+  /** Las paradas que se muestran en vivo. Pueden ser cientos: el buscador filtra. */
   async paradas(): Promise<Parada[]> {
     const filas = await firstValueFrom(
       this.http.get<any[]>(`${entorno.supabaseUrl}/rest/v1/parada`, {
         headers: this.cabeceras,
         params: {
-          select: 'id,nombre,lat,lon',
-          recolectar: 'eq.true',
+          select: 'id,nombre,lat,lon,lineas',
+          en_vivo: 'eq.true',
           order: 'nombre.asc',
         },
       }),
     );
-    return filas.map((f) => ({ id: f.id, nombre: f.nombre, lat: f.lat, lon: f.lon }));
+    return filas.map((f) => ({
+      id: f.id,
+      nombre: f.nombre,
+      lat: f.lat,
+      lon: f.lon,
+      lineas: Array.isArray(f.lineas) ? f.lineas : [],
+    }));
   }
 
   async llegadas(stopId: string): Promise<Llegadas | null> {
@@ -89,7 +97,9 @@ export class Api {
     const f = filas[0];
 
     return {
-      parada: f.parada ?? { id: f.stop_id, nombre: f.stop_id, lat: null, lon: null },
+      parada: f.parada
+        ? { ...f.parada, lineas: f.parada.lineas ?? [] }
+        : { id: f.stop_id, nombre: f.stop_id, lat: null, lon: null, lineas: [] },
       generado: f.generado,
       feedTs: f.feed_ts ?? null,
       antiguedadSegundos: f.feed_ts

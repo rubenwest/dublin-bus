@@ -4,6 +4,16 @@ import { entorno } from './entorno';
 
 const CLAVE_ULTIMA = 'dublin-bus.ultima-parada';
 const CLAVE_LINEAS = 'dublin-bus.lineas';
+const CLAVE_FAV = 'dublin-bus.favoritas';
+
+/**
+ * Por encima de esto la lista plana no se enseña entera: hay que buscar. Con
+ * las 3 paradas de la demo la lista cabía; con el centro son cientos y una
+ * lista de cientos no se recorre con el bus entrando.
+ */
+const LISTA_SIN_BUSCAR = 25;
+/** Tope de resultados de una búsqueda, para no pintar cientos de golpe. */
+const MAX_RESULTADOS = 60;
 
 /**
  * Cuántas llegadas se enseñan de cada línea. La ventana del recolector son 90
@@ -12,6 +22,11 @@ const CLAVE_LINEAS = 'dublin-bus.lineas';
  * horario tiene el botón de abajo.
  */
 const POR_LINEA = 3;
+
+/** Sin acentos y en minúsculas, para que "dun" case con "Dún". */
+function normaliza(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
 
 @Component({
   selector: 'app-root',
@@ -23,6 +38,11 @@ export class App implements OnDestroy {
 
   readonly paradas = signal<Parada[]>([]);
   readonly parada = signal<Parada | null>(null);
+
+  /** Texto del buscador de paradas. */
+  readonly busqueda = signal('');
+  /** Ids de paradas favoritas, ancladas arriba. En localStorage. */
+  readonly favoritas = signal<string[]>(this.favoritasGuardadas());
   readonly datos = signal<Llegadas | null>(null);
   readonly cargando = signal(false);
   readonly error = signal<string | null>(null);
@@ -92,6 +112,39 @@ export class App implements OnDestroy {
     () => this.hayLlegadas() && this.llegadasFiltradas().length === 0,
   );
 
+  /** Las paradas marcadas como favoritas, en el orden del catálogo. */
+  readonly favoritasParadas = computed(() => {
+    const fav = new Set(this.favoritas());
+    return this.paradas().filter((p) => fav.has(p.id));
+  });
+
+  /**
+   * Lo que se pinta bajo el buscador: los resultados de la búsqueda, o —si no
+   * se ha escrito nada y hay pocas paradas— la lista entera. Con cientos de
+   * paradas y sin texto no se pinta nada: para eso está el buscador. Las
+   * favoritas se sacan de aquí porque ya van ancladas arriba.
+   */
+  readonly resultados = computed(() => {
+    const q = normaliza(this.busqueda().trim());
+    const fav = new Set(this.favoritas());
+    const base = q
+      ? this.paradas().filter(
+          (p) =>
+            normaliza(p.nombre).includes(q) ||
+            p.id.toLowerCase().includes(q) ||
+            p.lineas.some((l) => normaliza(l).includes(q)),
+        )
+      : this.paradas().length <= LISTA_SIN_BUSCAR
+        ? this.paradas()
+        : [];
+    return base.filter((p) => !fav.has(p.id)).slice(0, MAX_RESULTADOS);
+  });
+
+  /** Hay más paradas de las que se enseñan y aún no se ha buscado nada. */
+  readonly pisteBuscar = computed(
+    () => !this.busqueda().trim() && this.paradas().length > LISTA_SIN_BUSCAR,
+  );
+
   private temporizador: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
@@ -137,6 +190,44 @@ export class App implements OnDestroy {
     this.lineasElegidas.set([]);
     this.sinTope.set(false);
     localStorage.removeItem(CLAVE_ULTIMA);
+  }
+
+  // --- Buscador y favoritas -------------------------------------------------
+
+  buscar(texto: string): void {
+    this.busqueda.set(texto);
+  }
+
+  esFavorita(id: string): boolean {
+    return this.favoritas().includes(id);
+  }
+
+  /**
+   * La estrella vive dentro del botón de la parada; sin parar la propagación,
+   * marcar favorita seleccionaría la parada y saltaría a sus llegadas.
+   */
+  alternarFavorita(p: Parada, ev: Event): void {
+    ev.stopPropagation();
+    const actual = this.favoritas();
+    const nuevas = actual.includes(p.id)
+      ? actual.filter((x) => x !== p.id)
+      : [...actual, p.id];
+    this.favoritas.set(nuevas);
+    try {
+      localStorage.setItem(CLAVE_FAV, JSON.stringify(nuevas));
+    } catch {
+      /* modo privado o almacenamiento lleno: la favorita no persiste, ni pasa nada */
+    }
+  }
+
+  private favoritasGuardadas(): string[] {
+    try {
+      const crudo = localStorage.getItem(CLAVE_FAV);
+      const leido = crudo ? JSON.parse(crudo) : null;
+      return Array.isArray(leido) ? leido.filter((x) => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
   }
 
   // --- Filtro por línea -----------------------------------------------------

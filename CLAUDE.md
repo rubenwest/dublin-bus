@@ -13,6 +13,12 @@ Si el proyecto se queda en "muestro los minutos", no aporta nada.
 
 ## Estado actual
 
+**Al día 2026-09-08: 338 paradas en vivo (el centro de Dublín), histórico en 3.**
+La web ya no lista paradas a pelo: hay buscador por nombre o línea, chips con
+las líneas de cada parada (que es lo que distingue las siete "O'Connell St") y
+favoritas en `localStorage`.
+
+
 - Cuenta creada en developer.nationaltransport.ie, suscrito al producto
   GTFS-Realtime, API key obtenida.
 - Los 3 endpoints probados manualmente desde el "Try it" del portal.
@@ -45,7 +51,12 @@ Auth: cabecera `x-api-key`. Añadir `Cache-Control: no-cache` en el cron.
 
 - **`?format=json` está soportado oficialmente.** No hace falta protobuf ni
   `gtfs-realtime-bindings`.
-- Cobertura: Dublin Bus, Bus Éireann, Go-Ahead Ireland. **Solo autobuses.**
+- Cobertura: Dublin Bus, Bus Éireann, Go-Ahead Ireland **y también el Luas**.
+  Lo de "solo autobuses" era falso: comprobado el 2026-09-08, el feed trae
+  trip_updates de las paradas `8220GA*` con líneas `Red` y `Green`, que son los
+  tranvías. De las 336 paradas del centro dadas de alta, 34 son de Luas y son
+  las que más llegadas tienen (33 de 34 activas a las 21:15, cuando los buses
+  ya van flojos). No estorba, pero que no sorprenda.
 - **No hay endpoint de ServiceAlerts.** Sin incidencias de servicio. Un desvío se
   ve como paradas `SKIPPED` y nada más, sin explicación.
 - Tras suscribirse, la API tarda ~15 min en activarse. Un 403 recién suscrito no
@@ -180,6 +191,17 @@ Bajarlo del enlace `(download)` de la página del producto GTFS-Realtime en el
 portal, **no** del portal de datos abierto general. Hay varias versiones del
 estático circulando y solo una casa con este feed.
 
+**URL directa, verificada el 2026-09-08** (no hace falta login ni la API key):
+
+```
+https://www.transportforireland.ie/transitData/Data/GTFS_Realtime.zip
+```
+
+93 MB, 5.988.909 filas en `stop_times.txt`, 181.488 trips, 10.181 paradas.
+**Casa al 100% con el feed**: de los 2.232 trip_id vivos del feed, los 2.232
+estaban en el índice. Esa es la comprobación que hay que repetir tras cada
+descarga — si el solapamiento no es ~100%, el ZIP es el equivocado.
+
 Ya no es un ZIP para toda Irlanda: viene troceado por operador.
 
 **Si `llegadas.mjs` dice "sin llegadas" siempre, el 90% de las veces es que el
@@ -306,9 +328,11 @@ Dos cosas que rompen el despliegue si se olvidan, y ya mordieron:
 
 ## Siguiente iteración, por orden de impacto
 
-**1. Abrir a todas las paradas de Dublín.** Hoy son 3 y eso es una demo.
-Medido, y son dos costes distintos que hay que separar (`parada.recolectar`
-controla los dos y habría que partirlo en dos banderas):
+**1. ~~Abrir a más paradas~~ HECHO el 2026-09-08: 338 en vivo (el centro).**
+Se partió `recolectar` en dos banderas (`en_vivo` / `recolectar`) y se le dio la
+vuelta al bucle. El alta se hace con `sincronizar.mjs --centro`, que elige por
+caja geográfica. Queda pendiente, si algún día hace falta, subir de 338 a las
+1.877 del núcleo `8220DB`. Las medidas que llevaron aquí:
 
 | Llegadas en vivo (horario, coste fijo) | Paradas | Espacio |
 |---|---|---|
@@ -325,12 +349,17 @@ controla los dos y habría que partirlo en dos banderas):
 Medido: **1.389 tramos por parada y día**. El plan gratuito son 500 MB en
 total. Conclusión: **llegadas en vivo, anchas; histórico, estrecho.**
 
-Requiere **darle la vuelta al bucle** de la Edge Function: hoy recorre
-*paradas → trips* y con 1.877 paradas cargaría 2 M de filas por minuto.
-Recorriendo *trips en vivo → sus paradas* son ~2.800 trips × ~35 paradas ≈
-98.000 filas, y salen las llegadas de todo Dublín de una pasada. Más barato
-que ahora y 600 veces más cobertura. Y **no cuesta ni una llamada más a la
-NTA**: el feed ya viene entero.
+**El bucle ya está del revés** (hecho el 2026-09-08). Antes recorría
+*paradas → trips* y paginaba TODO el `horario` de las paradas seguidas en cada
+pasada; con cientos de paradas eso son millones de filas por minuto. Ahora
+recorre *trips en vivo → sus paradas*: se sacan del feed los ~2.300 trip_id
+vivos y se pide solo su horario con la RPC `horario_de_trips(text[])`. El coste
+queda **acotado por el feed, no por el número de paradas**, que es justo lo que
+permite ensanchar gratis. Necesitó un índice en `horario(trip_id)`: la PK es
+`(stop_id, trip_id)` y no sirve para buscar solo por trip.
+
+La RPC tiene el EXECUTE revocado a `anon`/`public` y concedido a `service_role`,
+igual que `ingerir()`.
 
 **2. Geolocalización.** "Cerca de mí" como pantalla inicial. Ya guardamos
 `lat`/`lon` en `parada`. Es la diferencia entre una web y algo que se usa.
@@ -368,9 +397,23 @@ constante.** Un trip observado 60 veces con 5 valores distintos son 5 filas, no
 60: medido, 10,8x menos. Y no se pierde nada, porque `sondeos` (cuántas veces se
 repitió un valor) es justo lo que necesita la detección de congelados.
 
+**Dos costes distintos, dos banderas distintas** (esto era el punto 1 de la
+siguiente iteración y ya está hecho, 2026-09-08):
+
+- `parada.en_vivo` → se muestra en la web y se le reescribe `llegada_actual`.
+  **Ancho: 338 paradas** (las 336 del centro más Rathmines y Dún Laoghaire).
+  Abrirlo no cuesta ni una llamada más a la NTA, el feed ya viene entero.
+- `parada.recolectar` → se guarda su histórico en `serie`. **Estrecho: sigue en
+  3**, porque el histórico es lo único que llena el plan gratuito (100 paradas
+  ≈ 417 MB/mes de 500).
+
+Juntarlas en una sola bandera era lo que impedía ampliar. Separarlas es lo que
+permite "llegadas en vivo, anchas; histórico, estrecho".
+
 | Objeto | Qué es |
 |---|---|
-| `parada` | catálogo, sale del estático |
+| `parada` | catálogo, sale del estático. `en_vivo`, `recolectar`, `lineas` |
+| `horario` | recorte de `stop_times` de las paradas `en_vivo`. 335.549 filas |
 | `serie` | los tramos. Es la tabla que crece |
 | `paso_medido` | vista: un bus concreto en una parada, con su retraso ya medido |
 | `error_prediccion` | vista: cada predicción del feed contra lo que pasó |
@@ -418,6 +461,8 @@ iniciar.cmd api        solo la API (si el recolector ya corre)
 node scripts\llegadas.mjs <parada> .\gtfs      consulta suelta por consola
 node scripts\congelados.mjs .\datos            análisis del histórico (local)
 node scripts\indexar.mjs .\gtfs .\indice       tras bajar estático nuevo
+node scripts\sincronizar.mjs --centro --seco   cuenta las paradas del centro
+node scripts\sincronizar.mjs --centro          da de alta el centro (en_vivo)
 node scripts\sincronizar.mjs                   sube el día de hoy a Supabase
 node scripts\sincronizar.mjs --seco            cuenta sin subir
 node scripts\sincronizar.mjs --todo            sube todos los días

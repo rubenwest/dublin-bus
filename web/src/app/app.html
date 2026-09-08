@@ -11,29 +11,83 @@
 
 @if (!parada()) {
   <section class="buscador">
-    <label>Elige parada</label>
+    <label for="q">Elige parada</label>
+    <input
+      id="q"
+      type="search"
+      inputmode="search"
+      autocomplete="off"
+      placeholder="Busca por nombre o línea (p. ej. O'Connell, 46A)"
+      [value]="busqueda()"
+      (input)="buscar($any($event.target).value)" />
 
-    @if (paradas().length) {
+    @if (favoritasParadas().length) {
+      <h3 class="grupo">Favoritas</h3>
       <ul class="resultados">
-        @for (p of paradas(); track p.id) {
+        @for (p of favoritasParadas(); track p.id) {
           <li>
             <button type="button" data-test="parada" (click)="seleccionar(p)">
-              <span class="nombre">{{ p.nombre }}</span>
-              <span class="codigo">{{ p.id }}</span>
+              <span class="info">
+                <span class="nombre">{{ p.nombre }}</span>
+                @if (p.lineas.length) {
+                  <span class="lineas-parada">
+                    @for (l of p.lineas; track l) {
+                      <span class="linea-chip">{{ l }}</span>
+                    }
+                  </span>
+                }
+                <span class="codigo">{{ p.id }}</span>
+              </span>
+              <span
+                class="estrella activa"
+                data-test="favorita"
+                role="button"
+                aria-label="Quitar de favoritas"
+                [attr.aria-pressed]="true"
+                (click)="alternarFavorita(p, $event)">★</span>
+            </button>
+          </li>
+        }
+      </ul>
+    }
+
+    @if (resultados().length) {
+      @if (favoritasParadas().length) { <h3 class="grupo">Todas</h3> }
+      <ul class="resultados">
+        @for (p of resultados(); track p.id) {
+          <li>
+            <button type="button" data-test="parada" (click)="seleccionar(p)">
+              <span class="info">
+                <span class="nombre">{{ p.nombre }}</span>
+                @if (p.lineas.length) {
+                  <span class="lineas-parada">
+                    @for (l of p.lineas; track l) {
+                      <span class="linea-chip">{{ l }}</span>
+                    }
+                  </span>
+                }
+                <span class="codigo">{{ p.id }}</span>
+              </span>
+              <span
+                class="estrella"
+                data-test="favorita"
+                role="button"
+                aria-label="Añadir a favoritas"
+                [attr.aria-pressed]="false"
+                (click)="alternarFavorita(p, $event)">☆</span>
             </button>
           </li>
         }
       </ul>
     } @else if (cargando()) {
       <p class="tenue">Cargando paradas...</p>
-    } @else {
+    } @else if (busqueda().trim()) {
+      <p class="tenue">Ninguna parada casa con «{{ busqueda().trim() }}».</p>
+    } @else if (pisteBuscar()) {
+      <p class="tenue">Escribe arriba para buscar entre {{ paradas().length }} paradas.</p>
+    } @else if (!paradas().length) {
       <p class="tenue">No hay ninguna parada con datos todavía.</p>
     }
-
-    <p class="tenue nota-alcance">
-      Solo aparecen las paradas que se están recolectando. Añadir una es
-      cargar su horario y marcarla; no cuesta ni una llamada más a la API.
-    </p>
   </section>
 } @else {
   <section class="parada">
