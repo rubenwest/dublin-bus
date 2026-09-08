@@ -30,6 +30,7 @@ cargarDotEnv();
 const args = process.argv.slice(2);
 const SECO = args.includes("--seco");
 const TODO = args.includes("--todo");
+const HORARIO = args.includes("--horario");
 const DIA = args.includes("--dia") ? args[args.indexOf("--dia") + 1] : null;
 const datosDir = "./datos";
 
@@ -197,7 +198,81 @@ async function subirParadas(ids) {
   console.log(`catálogo: ${filas.length} paradas`);
 }
 
+/**
+ * Sube a Supabase el recorte de stop_times.txt de las paradas indicadas.
+ *
+ * Lo necesita la Edge Function: sin el horario no sabe a qué hora estaba
+ * programado cada trip, y sin eso no hay retraso que medir. El índice
+ * completo son 179 MB y 10.181 paradas; aquí solo van las que se recolectan.
+ *
+ * Hay que relanzarlo cada vez que se baje un estático nuevo.
+ */
+async function subirHorario(paradas) {
+  if (!paradas.length) {
+    console.error(
+      "Uso: node scripts\\sincronizar.mjs --horario <parada> [<parada>...]\n" +
+        "Ejemplo: node scripts\\sincronizar.mjs --horario 8220DB000270 8250DB002039",
+    );
+    process.exit(1);
+  }
+
+  for (const stop of paradas) {
+    const f = path.join("./indice/paradas", `${stop}.jsonl`);
+    if (!fs.existsSync(f)) {
+      console.error(`  ${stop}: no está en el índice. ¿Has corrido indexar.mjs?`);
+      continue;
+    }
+
+    // La PK es (stop_id, trip_id); el índice puede traer el mismo trip dos
+    // veces si la parada aparece dos veces en el recorrido (circulares).
+    const porTrip = new Map();
+    for (const linea of fs.readFileSync(f, "utf8").split("\n")) {
+      if (!linea.trim()) continue;
+      const [tripId, seq, prog] = JSON.parse(linea);
+      porTrip.set(tripId, { stop_id: stop, trip_id: tripId, seq, prog_segs: prog });
+    }
+    const filas = [...porTrip.values()];
+
+    if (SECO) {
+      console.log(`  ${stop}: ${filas.length} trips (seco, no se sube)`);
+      continue;
+    }
+
+    for (let i = 0; i < filas.length; i += LOTE) {
+      const res = await fetch(`${URL_BASE}/rest/v1/horario?on_conflict=stop_id,trip_id`, {
+        method: "POST",
+        headers: {
+          apikey: SERVICE_KEY,
+          Authorization: `Bearer ${SERVICE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates,return=minimal",
+        },
+        body: JSON.stringify(filas.slice(i, i + LOTE)),
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!res.ok) {
+        throw new Error(`horario ${stop}: HTTP ${res.status} — ${(await res.text()).slice(0, 300)}`);
+      }
+    }
+    console.log(`  ${stop}: ${filas.length} trips subidos`);
+  }
+
+  if (!SECO) {
+    await subirParadas(new Set(paradas));
+    console.log(
+      "\nActiva la recolección de esas paradas con:\n" +
+        "  update parada set recolectar = true where id in (...);",
+    );
+  }
+}
+
 // --- Main -------------------------------------------------------------------
+
+if (HORARIO) {
+  const paradas = args.filter((a) => /^[0-9]{4}[A-Z]{2}/i.test(a));
+  await subirHorario(paradas);
+  process.exit(0);
+}
 
 const fs_ = ficheros();
 if (!fs_.length) {

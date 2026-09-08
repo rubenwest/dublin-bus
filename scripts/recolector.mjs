@@ -18,6 +18,11 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { cargarDotEnv } from "./entorno.mjs";
+import { tomarLock } from "./lock.mjs";
+
+// Se rellena al arrancar, justo antes de indexar. Declarado aquí arriba para
+// que el handler de "exit" pueda soltarlo aunque salgamos antes de tomarlo.
+let lock = null;
 
 // --- CONFIGURA ESTO ---------------------------------------------------------
 const PARADAS = [
@@ -402,6 +407,15 @@ async function sondear() {
 async function bucle() {
   for (;;) {
     const t0 = Date.now();
+    // Si nos han robado el lock es que nos habíamos quedado mudos demasiado
+    // tiempo y otro recolector tomó el relevo. Nos apartamos.
+    if (!lock.refrescar()) {
+      console.error(
+        "\nOtro recolector se ha quedado con el lock. Salgo para no duplicar\n" +
+          "llamadas a la NTA.\n",
+      );
+      process.exit(0);
+    }
     try {
       await sondear();
     } catch (err) {
@@ -422,6 +436,7 @@ async function bucle() {
   }
 }
 
+process.on("exit", () => lock?.soltar?.());
 process.on("SIGINT", () => {
   console.log(
     `\n\nParado. ${sondeos} sondeos correctos, ${errores} fallidos, ` +
@@ -429,6 +444,20 @@ process.on("SIGINT", () => {
   );
   process.exit(0);
 });
+
+// Antes de indexar: si ya hay otro recolector vivo no merece la pena pasarse
+// diez segundos leyendo stop_times.txt para acabar saliendo.
+lock = tomarLock(datosDir);
+if (!lock.ok) {
+  const d = lock.duenyo;
+  console.error(
+    `\nYa hay un recolector vivo (PID ${d?.pid}, usuario ${d?.usuario}, ` +
+      `desde ${d?.desde}).\n` +
+      "Dos a la vez son dos llamadas por minuto a la NTA y salta el HTTP 429,\n" +
+      "así que este se aparta. La recolección sigue en el otro proceso.\n",
+  );
+  process.exit(0);
+}
 
 await construirIndice();
 console.log(
