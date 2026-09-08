@@ -14,3 +14,6 @@ indice/
 
 # logs del recolector
 datos/*.log
+
+# arranque del servidor de desarrollo desde Claude Code, es local
+.claude/launch.json
