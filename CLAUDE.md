@@ -61,7 +61,8 @@ sobre `snapshots/feed-1.json`), pero son minoría: 266 de 23.903 updates, un ~1%
 No se puede construir nada sobre ellos. Para el 99% restante hay que sumar el
 delay a la hora programada de `stop_times.txt`, así que **el estático sigue
 siendo obligatorio desde el minuto uno**, no hay atajo. Cuando la hora absoluta
-viene es preferible a sumar, y los scripts ya la prefieren si está.
+viene es preferible a sumar, y los scripts ya la prefieren si está — **pero solo
+si es de tu propia parada**; ver la trampa de abajo.
 
 **`uncertainty` también viene ya** (266 casos, los mismos que traen hora
 absoluta). Pero **vale siempre `0`**, y en la spec `uncertainty: 0` significa
@@ -98,6 +99,21 @@ O sea que si el update aplicable a tu parada es un `SKIPPED`, quedarte ahí no t
 deja sin bandera: te deja **sin delay**. Hay que seguir hacia atrás hasta el
 update anterior que traiga uno. Este fallo estuvo en `llegadas.mjs` y en
 `recolector.mjs` a la vez, que es lo que pasa con la lógica duplicada.
+
+**La hora absoluta NO se propaga, y el delay sí.** Esto es lo contrario de lo
+que hace el resto de la función y por eso se coló. El delay es un desfase y
+vale para las paradas siguientes; `arrival.time` es una hora concreta y vale
+solo para SU parada. Heredarla de una update anterior da la hora de llegada a
+*otra* parada — siempre anterior a la tuya — y como los llamantes prefieren la
+hora absoluta sobre `programado + delay`, salían buses que llegaban "ya"
+estando programados una hora más tarde: un `E2` de las 15:47 anunciado a las
+14:33, con `retrasoSegundos: 75`. La fila se contradecía sola.
+
+No era raro: **212 de las 620 horas absolutas del snapshot (34%) venían de otra
+parada**. Arreglado el 2026-09-08 en `estadoParada`, con tres pruebas nuevas.
+Tras el arreglo son 408 y ninguna de otra parada, que es exactamente el número
+de `arrival.time` que contiene el snapshot. El delay no se tocó: idéntico en
+las 32.025 combinaciones.
 
 **Los trips `ADDED` vienen sin `trip_id`** — solo `route_id`, `start_time` y
 `direction_id` — y con horas absolutas en vez de delay. Por definición no cruzan

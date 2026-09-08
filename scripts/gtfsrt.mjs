@@ -44,22 +44,25 @@ export function estadoParada(ups, seqObjetivo) {
 
   const saltada = relCercano === "SKIPPED" && cercano.seq === seqObjetivo;
 
+  // La hora absoluta NO se propaga: `arrival.time` es la llegada a SU parada y
+  // a ninguna otra. Solo vale si la update es exactamente la de mi parada.
+  // Heredarla de una anterior daba la hora de otra parada como si fuera esta,
+  // siempre anterior, y salían buses "adelantados" una hora que no existen.
+  // Lo que sí se propaga hacia adelante es el delay, que es un desfase.
+  const tExacta = cercano.seq === seqObjetivo
+    ? cercano.u.arrival?.time ?? cercano.u.departure?.time
+    : undefined;
+  const horaAbs = tExacta !== undefined ? Number(tExacta) : null;
+
   let delay = null,
-    horaAbs = null,
-    origen = null;
+    origen = horaAbs === null ? null : seqObjetivo;
   for (const { u, seq } of previos) {
     if ((u.schedule_relationship ?? "SCHEDULED") === "NO_DATA") break;
     const d = u.arrival?.delay ?? u.departure?.delay;
-    const t = u.arrival?.time ?? u.departure?.time;
     if (d !== undefined) {
       delay = Number(d);
       origen = seq;
-      if (t !== undefined) horaAbs = Number(t);
       break;
-    }
-    if (t !== undefined && horaAbs === null) {
-      horaAbs = Number(t);
-      origen = seq;
     }
   }
 

@@ -123,6 +123,26 @@ comprueba(
   { rel: "SCHEDULED", delay: 496, horaAbs: 1788511934 },
 );
 
+// La hora absoluta es de SU parada. El delay se propaga hacia adelante porque
+// es un desfase; una hora concreta no. Heredarla daba la llegada a otra parada
+// como si fuera esta —siempre anterior— y salían buses "adelantados" una hora
+// que no existían: 212 de 620 casos del snapshot, un 34%.
+comprueba(
+  "la hora absoluta NO se hereda de una parada anterior",
+  estadoParada([conDelay(10, 75), u(20, { arrival: { time: "1788511934" } })], 25),
+  { rel: "SCHEDULED", delay: 75, horaAbs: null, origen: 10 },
+);
+comprueba(
+  "solo hay hora de otra parada: no hay dato, no me la invento",
+  estadoParada([u(20, { arrival: { time: "1788511934" } })], 25),
+  { rel: "SIN_UPDATE", delay: null, horaAbs: null },
+);
+comprueba(
+  "la hora de MI parada vale aunque el delay venga de atrás",
+  estadoParada([conDelay(10, 75), u(25, { arrival: { time: "1788511934" } })], 25),
+  { rel: "SCHEDULED", delay: 75, horaAbs: 1788511934, origen: 10 },
+);
+
 // --- 5. Contra datos reales --------------------------------------------------
 
 if (!fs.existsSync(SNAPSHOT)) {
