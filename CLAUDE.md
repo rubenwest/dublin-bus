@@ -310,7 +310,23 @@ seguía diciendo +3". Es la lectura útil, y la conservadora.
 
 RLS activo: lectura pública para `anon`, y ninguna política de escritura. Sólo
 la `service_role` key escribe, porque se salta RLS por diseño. **Esa key nunca
-puede ir en el bundle de Angular.**
+puede ir en el bundle de Angular.** La RPC `ingerir()` tiene el EXECUTE
+revocado a `anon`; comprobado desde fuera: devuelve `401 permission denied`.
+
+**NUNCA añadir `net` a los esquemas expuestos** (Project Settings > API >
+Exposed schemas). `pg_net` se instala dando `EXECUTE` a `PUBLIC` sobre
+`net.http_post`, `http_get` y `http_delete`, y `anon` lo hereda. Hoy no es
+explotable porque PostgREST solo expone `public` y `graphql_public` — probado:
+forzar `Content-Profile: net` devuelve
+`406 Only the following schemas are exposed`. Pero el día que alguien exponga
+ese esquema, cualquiera con la clave publicable convierte la base de datos en
+un proxy HTTP y alcanza servicios internos. SSRF de manual.
+
+**Y no se puede arreglar desde aquí**: esos objetos son propiedad de
+`supabase_admin` y la conexión del panel y del MCP es `postgres`. Un `REVOKE`
+que no lanza el propietario **no falla, no hace nada** — se aplicó y el permiso
+seguía puesto. Si alguna vez hace falta cerrarlo de verdad, hay que ir por
+soporte de Supabase; mientras tanto, la mitigación real es no exponer `net`.
 
 `sincronizar.mjs` va aparte del recolector a propósito: el recolector tiene un
 solo trabajo, que es no perder datos. Si Supabase está caído, la recolección
