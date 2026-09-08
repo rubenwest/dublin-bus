@@ -44,6 +44,12 @@ button {
   background: var(--fondo2);
   color: inherit;
   padding: 0.35rem 0.7rem;
+
+  /* Esto se usa de pie en una marquesina, con una mano y con prisa. 44px es
+     el mínimo que recomiendan Apple y las WCAG para tocar con el dedo; sin
+     esto salían de 29 a 42, y fallar el botón con el bus llegando es el peor
+     momento posible para pelearse con una interfaz. */
+  min-height: 44px;
 }
 button:hover:not(:disabled) { border-color: var(--acento); }
 button:disabled { opacity: 0.5; cursor: default; }
