@@ -510,3 +510,26 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: 3px 3px 0 var(--har
   color: var(--acento);
   white-space: nowrap;
 }
+
+/* --- Selector de idioma (banderas 8-bit) --------------------------------- */
+
+.idiomas { display: flex; gap: 0.4rem; align-items: center; }
+.bandera {
+  padding: 6px;
+  min-height: 0;
+  line-height: 0;
+  border: 2px solid var(--hard);
+  box-shadow: 2px 2px 0 var(--hard);
+  background: var(--fondo2);
+}
+.bandera .bandera-svg {
+  display: block;
+  height: 15px;
+  width: auto;
+  image-rendering: pixelated;
+}
+/* La bandera inactiva se apaga; la activa se enmarca en el color de acento. */
+.bandera:not(.activo) { opacity: 0.5; }
+.bandera.activo { border-color: var(--acento); box-shadow: 2px 2px 0 var(--acento); }
+.bandera:hover:not(:disabled) { border-color: var(--acento); }
+.bandera:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: none; }

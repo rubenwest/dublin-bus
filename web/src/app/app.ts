@@ -2,10 +2,12 @@ import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { SwUpdate } from '@angular/service-worker';
 import { Api, Llegada, Llegadas, Parada } from './api';
 import { entorno } from './entorno';
+import { Idioma, traducir } from './i18n';
 
 const CLAVE_ULTIMA = 'dublin-bus.ultima-parada';
 const CLAVE_LINEAS = 'dublin-bus.lineas';
 const CLAVE_FAV = 'dublin-bus.favoritas';
+const CLAVE_IDIOMA = 'dublin-bus.idioma';
 
 /**
  * Por encima de esto la lista plana no se enseña entera: hay que buscar. Con
@@ -93,6 +95,9 @@ export class App implements OnDestroy {
    * más abrir; el radar se ve al tocar su pestaña.
    */
   readonly modo = signal<'cerca' | 'buscar'>('buscar');
+
+  /** Idioma de la interfaz. Se cambia en caliente desde las banderas de arriba. */
+  readonly lang = signal<Idioma>(this.idiomaInicial());
 
   /**
    * Líneas elegidas en el filtro. Vacío significa "todas", no "ninguna": es
@@ -252,6 +257,34 @@ export class App implements OnDestroy {
     if (this.comprobarVersion) clearInterval(this.comprobarVersion);
   }
 
+  // --- Idioma ---------------------------------------------------------------
+
+  /** Traduce una clave al idioma actual, sustituyendo `{x}` por `params`. */
+  t(clave: string, params?: Record<string, string | number>): string {
+    return traducir(this.lang(), clave, params);
+  }
+
+  cambiarIdioma(l: Idioma): void {
+    this.lang.set(l);
+    document.documentElement.lang = l;
+    try {
+      localStorage.setItem(CLAVE_IDIOMA, l);
+    } catch {
+      /* modo privado: no se recuerda, se vuelve a elegir la próxima vez */
+    }
+  }
+
+  /** Idioma guardado; si no hay, el del navegador (es → español, si no inglés). */
+  private idiomaInicial(): Idioma {
+    try {
+      const g = localStorage.getItem(CLAVE_IDIOMA);
+      if (g === 'es' || g === 'en') return g;
+    } catch {
+      /* sin localStorage: se cae al idioma del navegador */
+    }
+    return (navigator.language || '').toLowerCase().startsWith('es') ? 'es' : 'en';
+  }
+
   /**
    * Auto-actualización de la PWA. Sin esto, tras un despliegue el service worker
    * sigue sirviendo la versión vieja hasta que cierras la app del todo y la
@@ -290,7 +323,7 @@ export class App implements OnDestroy {
       if (previa) this.seleccionar(previa);
       else if (lista.length === 1) this.seleccionar(lista[0]);
     } catch {
-      this.error.set('No he podido cargar las paradas. ¿Hay conexión?');
+      this.error.set(this.t('err_cargar_paradas'));
     } finally {
       this.cargando.set(false);
     }
@@ -468,9 +501,9 @@ export class App implements OnDestroy {
   }
 
   textoTope(): string {
-    if (this.sinTope()) return 'Ver solo las próximas';
+    if (this.sinTope()) return this.t('ver_solo_proximas');
     const n = this.recortadas();
-    return n === 1 ? 'Ver 1 llegada más' : `Ver ${n} llegadas más`;
+    return n === 1 ? this.t('ver_una_mas') : this.t('ver_n_mas', { n });
   }
 
   private guardarFiltro(lineas: string[]): void {
@@ -489,13 +522,13 @@ export class App implements OnDestroy {
     try {
       const d = await this.api.llegadas(p.id);
       if (!d) {
-        this.error.set('Esta parada aún no tiene datos recogidos.');
+        this.error.set(this.t('err_sin_datos_parada'));
       } else {
         this.datos.set(d);
         this.actualizado.set(new Date());
       }
     } catch {
-      this.error.set('No he podido hablar con el servidor.');
+      this.error.set(this.t('err_servidor'));
     } finally {
       this.cargando.set(false);
     }
@@ -514,9 +547,9 @@ export class App implements OnDestroy {
   // --- Presentación ---------------------------------------------------------
 
   cuando(l: Llegada): string {
-    if (l.estado === 'SALTADA') return 'NO PARA';
+    if (l.estado === 'SALTADA') return this.t('no_para');
     if (l.estado === 'CANCELADO') return '--';
-    if (l.minutos <= 0) return 'ya';
+    if (l.minutos <= 0) return this.t('ya');
     return String(l.minutos);
   }
 
@@ -524,23 +557,23 @@ export class App implements OnDestroy {
   unidad(l: Llegada): string {
     return l.estado === 'SALTADA' || l.estado === 'CANCELADO' || l.minutos <= 0
       ? ''
-      : 'min';
+      : this.t('min');
   }
 
   nota(l: Llegada): string {
     switch (l.estado) {
       case 'SALTADA':
-        return 'el operador marca esta parada como saltada';
+        return this.t('nota_saltada');
       case 'CANCELADO':
-        return 'viaje cancelado';
+        return this.t('nota_cancelado');
       case 'SIN_DATOS':
-        return 'el operador no da datos aquí, solo horario';
+        return this.t('nota_sin_datos');
       case 'SOLO_HORARIO':
-        return 'sin dato en vivo, solo horario';
+        return this.t('nota_solo_horario');
     }
     const m = this.minutosRetraso(l);
-    if (m === 0) return 'en hora';
-    return m > 0 ? `${m} min tarde` : `${Math.abs(m)} min adelantado`;
+    if (m === 0) return this.t('en_hora');
+    return m > 0 ? this.t('min_tarde', { m }) : this.t('min_adelantado', { m: Math.abs(m) });
   }
 
   /**
@@ -606,7 +639,7 @@ export class App implements OnDestroy {
   detalle(l: Llegada): string {
     const nota = this.nota(l);
     return this.repiteProgramado(l)
-      ? `programado ${this.horaProgramada(l)} · ${nota}`
+      ? this.t('programado', { hora: this.horaProgramada(l), nota })
       : nota;
   }
 

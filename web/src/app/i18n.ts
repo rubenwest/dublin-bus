@@ -1,0 +1,139 @@
+/**
+ * Traducción en runtime, sin dependencias: un diccionario por idioma y un
+ * `t(clave, params)` que sustituye `{x}`. Se cambia con un signal, así que la
+ * interfaz se retraduce al instante al tocar la bandera, sin recargar ni
+ * builds separados (que es lo que obliga la i18n oficial de Angular).
+ */
+export type Idioma = 'es' | 'en';
+
+export const IDIOMAS: Idioma[] = ['es', 'en'];
+
+type Dic = Record<string, string>;
+
+export const DIC: Record<Idioma, Dic> = {
+  es: {
+    titulo: 'Llegadas · Dublín',
+    inicio: 'Inicio',
+    cerca: 'Cerca de ti',
+    buscar: 'Buscar parada',
+    donde_estas: 'Dónde estás',
+    como_elegir: 'Cómo elegir la parada',
+    cta_cerca: 'Paradas cerca de mí',
+    buscando_ubicacion: 'Buscando tu ubicación…',
+    geo_denegada: 'Ubicación denegada. Puedes buscar tu parada por nombre o línea abajo.',
+    geo_no_soportado: 'Tu navegador no da ubicación. Busca tu parada abajo.',
+    geo_error: 'No pude obtener tu ubicación.',
+    reintentar: 'Reintentar',
+    sin_cercanas: 'No hay paradas con ubicación cerca de ti.',
+    cerca_radio: 'Cerca de ti · radio {n} m',
+    radar_alt: 'Radar de paradas cercanas, tú en el centro',
+    elige_parada: 'Elige parada',
+    ph_buscar: "Busca por nombre o línea (p. ej. O'Connell, 46A)",
+    favoritas: 'Favoritas',
+    todas_grupo: 'Todas',
+    cargando_paradas: 'Cargando paradas…',
+    sin_coincidencias: 'Ninguna parada casa con «{q}».',
+    piste_buscar: 'Escribe arriba para buscar entre {n} paradas.',
+    sin_paradas: 'No hay ninguna parada con datos todavía.',
+    quitar_fav: 'Quitar de favoritas',
+    anadir_fav: 'Añadir a favoritas',
+    filtrar_linea: 'Filtrar por línea',
+    todas: 'Todas',
+    rancio: 'Los datos son de hace {n} s. La recolección puede estar caída: no te fíes de estos minutos.',
+    ninguna_linea: 'Ninguna de las líneas elegidas llega en los próximos 90 minutos.',
+    ver_todas: 'Ver todas',
+    sin_llegadas: 'Sin llegadas en los próximos 90 minutos.',
+    actualizado: 'Actualizado a las {hora}',
+    feed_hace: '· feed de hace {n} s',
+    actualizar: 'Actualizar',
+    actualizando: 'Actualizando…',
+    cargando_llegadas: 'Cargando llegadas…',
+    ver_solo_proximas: 'Ver solo las próximas',
+    ver_una_mas: 'Ver 1 llegada más',
+    ver_n_mas: 'Ver {n} llegadas más',
+    no_para: 'NO PARA',
+    ya: 'ya',
+    min: 'min',
+    nota_saltada: 'el operador marca esta parada como saltada',
+    nota_cancelado: 'viaje cancelado',
+    nota_sin_datos: 'el operador no da datos aquí, solo horario',
+    nota_solo_horario: 'sin dato en vivo, solo horario',
+    en_hora: 'en hora',
+    min_tarde: '{m} min tarde',
+    min_adelantado: '{m} min adelantado',
+    programado: 'programado {hora} · {nota}',
+    err_cargar_paradas: 'No he podido cargar las paradas. ¿Hay conexión?',
+    err_sin_datos_parada: 'Esta parada aún no tiene datos recogidos.',
+    err_servidor: 'No he podido hablar con el servidor.',
+    idioma_es: 'Español',
+    idioma_en: 'Inglés',
+  },
+  en: {
+    titulo: 'Arrivals · Dublin',
+    inicio: 'Home',
+    cerca: 'Near you',
+    buscar: 'Find a stop',
+    donde_estas: 'Where you are',
+    como_elegir: 'How to choose the stop',
+    cta_cerca: 'Stops near me',
+    buscando_ubicacion: 'Finding your location…',
+    geo_denegada: 'Location denied. You can search for your stop by name or line below.',
+    geo_no_soportado: 'Your browser has no location. Search for your stop below.',
+    geo_error: "Couldn't get your location.",
+    reintentar: 'Retry',
+    sin_cercanas: 'No located stops near you.',
+    cerca_radio: 'Near you · {n} m radius',
+    radar_alt: 'Radar of nearby stops, you at the centre',
+    elige_parada: 'Choose a stop',
+    ph_buscar: "Search by name or line (e.g. O'Connell, 46A)",
+    favoritas: 'Favourites',
+    todas_grupo: 'All',
+    cargando_paradas: 'Loading stops…',
+    sin_coincidencias: 'No stop matches “{q}”.',
+    piste_buscar: 'Type above to search {n} stops.',
+    sin_paradas: 'No stops with data yet.',
+    quitar_fav: 'Remove from favourites',
+    anadir_fav: 'Add to favourites',
+    filtrar_linea: 'Filter by line',
+    todas: 'All',
+    rancio: "Data is {n} s old. Collection may be down: don't trust these minutes.",
+    ninguna_linea: 'None of the chosen lines arrive in the next 90 minutes.',
+    ver_todas: 'Show all',
+    sin_llegadas: 'No arrivals in the next 90 minutes.',
+    actualizado: 'Updated at {hora}',
+    feed_hace: '· feed {n} s ago',
+    actualizar: 'Refresh',
+    actualizando: 'Refreshing…',
+    cargando_llegadas: 'Loading arrivals…',
+    ver_solo_proximas: 'Show only upcoming',
+    ver_una_mas: 'Show 1 more arrival',
+    ver_n_mas: 'Show {n} more arrivals',
+    no_para: 'NO STOP',
+    ya: 'now',
+    min: 'min',
+    nota_saltada: 'the operator marks this stop as skipped',
+    nota_cancelado: 'trip cancelled',
+    nota_sin_datos: 'the operator gives no data here, schedule only',
+    nota_solo_horario: 'no live data, schedule only',
+    en_hora: 'on time',
+    min_tarde: '{m} min late',
+    min_adelantado: '{m} min early',
+    programado: 'scheduled {hora} · {nota}',
+    err_cargar_paradas: "Couldn't load the stops. Are you online?",
+    err_sin_datos_parada: 'This stop has no collected data yet.',
+    err_servidor: "Couldn't reach the server.",
+    idioma_es: 'Spanish',
+    idioma_en: 'English',
+  },
+};
+
+/** Sustituye {clave} por su valor en la plantilla del idioma dado. */
+export function traducir(idioma: Idioma, clave: string, params?: Record<string, string | number>): string {
+  let s = DIC[idioma][clave] ?? DIC.es[clave] ?? clave;
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      s = s.replaceAll(`{${k}}`, String(v));
+    }
+  }
+  return s;
+}

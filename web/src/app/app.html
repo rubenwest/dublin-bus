@@ -1,23 +1,51 @@
 <header class="cabecera">
-  <h1>Llegadas · Dublín</h1>
+  <h1>{{ t('titulo') }}</h1>
+  <div class="idiomas" role="group" [attr.aria-label]="'Idioma / Language'">
+    <button type="button" class="bandera" data-test="idioma-es"
+      [class.activo]="lang() === 'es'" [attr.aria-pressed]="lang() === 'es'"
+      [attr.aria-label]="t('idioma_es')" (click)="cambiarIdioma('es')">
+      <svg class="bandera-svg" viewBox="0 0 16 11" shape-rendering="crispEdges" aria-hidden="true">
+        <rect x="0" y="0" width="16" height="11" fill="#c60b1e" />
+        <rect x="0" y="3" width="16" height="5" fill="#ffc400" />
+      </svg>
+    </button>
+    <button type="button" class="bandera" data-test="idioma-en"
+      [class.activo]="lang() === 'en'" [attr.aria-pressed]="lang() === 'en'"
+      [attr.aria-label]="t('idioma_en')" (click)="cambiarIdioma('en')">
+      <svg class="bandera-svg" viewBox="0 0 18 12" shape-rendering="crispEdges" aria-hidden="true">
+        <rect x="0" y="0" width="2" height="1" fill="#c8102e"/><rect x="2" y="0" width="2" height="1" fill="#ffffff"/><rect x="4" y="0" width="2" height="1" fill="#012169"/><rect x="6" y="0" width="1" height="1" fill="#ffffff"/><rect x="7" y="0" width="4" height="1" fill="#c8102e"/><rect x="11" y="0" width="1" height="1" fill="#ffffff"/><rect x="12" y="0" width="2" height="1" fill="#012169"/><rect x="14" y="0" width="2" height="1" fill="#ffffff"/><rect x="16" y="0" width="2" height="1" fill="#c8102e"/>
+        <rect x="0" y="1" width="1" height="1" fill="#ffffff"/><rect x="1" y="1" width="3" height="1" fill="#c8102e"/><rect x="4" y="1" width="1" height="1" fill="#ffffff"/><rect x="5" y="1" width="1" height="1" fill="#012169"/><rect x="6" y="1" width="1" height="1" fill="#ffffff"/><rect x="7" y="1" width="4" height="1" fill="#c8102e"/><rect x="11" y="1" width="1" height="1" fill="#ffffff"/><rect x="12" y="1" width="1" height="1" fill="#012169"/><rect x="13" y="1" width="1" height="1" fill="#ffffff"/><rect x="14" y="1" width="3" height="1" fill="#c8102e"/><rect x="17" y="1" width="1" height="1" fill="#ffffff"/>
+        <rect x="0" y="2" width="1" height="1" fill="#012169"/><rect x="1" y="2" width="1" height="1" fill="#ffffff"/><rect x="2" y="2" width="3" height="1" fill="#c8102e"/><rect x="5" y="2" width="2" height="1" fill="#ffffff"/><rect x="7" y="2" width="4" height="1" fill="#c8102e"/><rect x="11" y="2" width="2" height="1" fill="#ffffff"/><rect x="13" y="2" width="3" height="1" fill="#c8102e"/><rect x="16" y="2" width="1" height="1" fill="#ffffff"/><rect x="17" y="2" width="1" height="1" fill="#012169"/>
+        <rect x="0" y="3" width="2" height="1" fill="#012169"/><rect x="2" y="3" width="2" height="1" fill="#ffffff"/><rect x="4" y="3" width="2" height="1" fill="#c8102e"/><rect x="6" y="3" width="1" height="1" fill="#ffffff"/><rect x="7" y="3" width="4" height="1" fill="#c8102e"/><rect x="11" y="3" width="1" height="1" fill="#ffffff"/><rect x="12" y="3" width="2" height="1" fill="#c8102e"/><rect x="14" y="3" width="2" height="1" fill="#ffffff"/><rect x="16" y="3" width="2" height="1" fill="#012169"/>
+        <rect x="0" y="4" width="7" height="1" fill="#ffffff"/><rect x="7" y="4" width="4" height="1" fill="#c8102e"/><rect x="11" y="4" width="7" height="1" fill="#ffffff"/>
+        <rect x="0" y="5" width="18" height="1" fill="#c8102e"/>
+        <rect x="0" y="6" width="18" height="1" fill="#c8102e"/>
+        <rect x="0" y="7" width="7" height="1" fill="#ffffff"/><rect x="7" y="7" width="4" height="1" fill="#c8102e"/><rect x="11" y="7" width="7" height="1" fill="#ffffff"/>
+        <rect x="0" y="8" width="2" height="1" fill="#012169"/><rect x="2" y="8" width="2" height="1" fill="#ffffff"/><rect x="4" y="8" width="2" height="1" fill="#c8102e"/><rect x="6" y="8" width="1" height="1" fill="#ffffff"/><rect x="7" y="8" width="4" height="1" fill="#c8102e"/><rect x="11" y="8" width="1" height="1" fill="#ffffff"/><rect x="12" y="8" width="2" height="1" fill="#c8102e"/><rect x="14" y="8" width="2" height="1" fill="#ffffff"/><rect x="16" y="8" width="2" height="1" fill="#012169"/>
+        <rect x="0" y="9" width="1" height="1" fill="#012169"/><rect x="1" y="9" width="1" height="1" fill="#ffffff"/><rect x="2" y="9" width="3" height="1" fill="#c8102e"/><rect x="5" y="9" width="2" height="1" fill="#ffffff"/><rect x="7" y="9" width="4" height="1" fill="#c8102e"/><rect x="11" y="9" width="2" height="1" fill="#ffffff"/><rect x="13" y="9" width="3" height="1" fill="#c8102e"/><rect x="16" y="9" width="1" height="1" fill="#ffffff"/><rect x="17" y="9" width="1" height="1" fill="#012169"/>
+        <rect x="0" y="10" width="1" height="1" fill="#ffffff"/><rect x="1" y="10" width="3" height="1" fill="#c8102e"/><rect x="4" y="10" width="1" height="1" fill="#ffffff"/><rect x="5" y="10" width="1" height="1" fill="#012169"/><rect x="6" y="10" width="1" height="1" fill="#ffffff"/><rect x="7" y="10" width="4" height="1" fill="#c8102e"/><rect x="11" y="10" width="1" height="1" fill="#ffffff"/><rect x="12" y="10" width="1" height="1" fill="#012169"/><rect x="13" y="10" width="1" height="1" fill="#ffffff"/><rect x="14" y="10" width="3" height="1" fill="#c8102e"/><rect x="17" y="10" width="1" height="1" fill="#ffffff"/>
+        <rect x="0" y="11" width="2" height="1" fill="#c8102e"/><rect x="2" y="11" width="2" height="1" fill="#ffffff"/><rect x="4" y="11" width="2" height="1" fill="#012169"/><rect x="6" y="11" width="1" height="1" fill="#ffffff"/><rect x="7" y="11" width="4" height="1" fill="#c8102e"/><rect x="11" y="11" width="1" height="1" fill="#ffffff"/><rect x="12" y="11" width="2" height="1" fill="#012169"/><rect x="14" y="11" width="2" height="1" fill="#ffffff"/><rect x="16" y="11" width="2" height="1" fill="#c8102e"/>
+      </svg>
+    </button>
+  </div>
 </header>
 
 <!-- Camino de migas: dónde estás y cómo volver a donde estabas. La miga del
      medio (Cerca de ti / Buscar parada) recuerda desde qué pantalla entraste. -->
-<nav class="migas" aria-label="Dónde estás">
+<nav class="migas" [attr.aria-label]="t('donde_estas')">
   @if (parada()) {
-    <button type="button" class="miga" data-test="miga-inicio" (click)="volver()">Inicio</button>
+    <button type="button" class="miga" data-test="miga-inicio" (click)="volver()">{{ t('inicio') }}</button>
     <span class="sep" aria-hidden="true">›</span>
     <button type="button" class="miga" data-test="miga-modo" (click)="volver()">
-      {{ modo() === 'cerca' ? 'Cerca de ti' : 'Buscar parada' }}
+      {{ modo() === 'cerca' ? t('cerca') : t('buscar') }}
     </button>
     <span class="sep" aria-hidden="true">›</span>
     <span class="miga actual" aria-current="page">{{ parada()!.nombre }}</span>
   } @else {
-    <span class="miga">Inicio</span>
+    <span class="miga">{{ t('inicio') }}</span>
     <span class="sep" aria-hidden="true">›</span>
     <span class="miga actual" aria-current="page">
-      {{ modo() === 'cerca' ? 'Cerca de ti' : 'Buscar parada' }}
+      {{ modo() === 'cerca' ? t('cerca') : t('buscar') }}
     </span>
   }
 </nav>
@@ -28,11 +56,11 @@
 
 @if (!parada()) {
   <section class="buscador">
-    <div class="modos" role="group" aria-label="Cómo elegir la parada">
+    <div class="modos" role="group" [attr.aria-label]="t('como_elegir')">
       <button type="button" class="modo" data-test="modo-cerca"
-        [class.activo]="modo() === 'cerca'" (click)="verCerca()">Cerca de ti</button>
+        [class.activo]="modo() === 'cerca'" (click)="verCerca()">{{ t('cerca') }}</button>
       <button type="button" class="modo" data-test="modo-buscar"
-        [class.activo]="modo() === 'buscar'" (click)="modo.set('buscar')">Buscar parada</button>
+        [class.activo]="modo() === 'buscar'" (click)="modo.set('buscar')">{{ t('buscar') }}</button>
     </div>
 
     @if (modo() === 'cerca') {
@@ -44,7 +72,7 @@
           @if (cercanas().length) {
             <div class="radarwrap">
               <svg class="radar" viewBox="0 0 300 300" role="img"
-                   aria-label="Radar de paradas cercanas, tú en el centro">
+                   [attr.aria-label]="t('radar_alt')">
                 <circle class="r-bezel" cx="150" cy="150" r="140" />
                 <circle class="r-screen" cx="150" cy="150" r="126" />
                 <circle class="r-ring" cx="150" cy="150" r="118" />
@@ -79,7 +107,7 @@
               </svg>
             </div>
 
-            <h3 class="grupo">Cerca de ti · radio {{ radioMetros() }} m</h3>
+            <h3 class="grupo">{{ t('cerca_radio', { n: radioMetros() }) }}</h3>
             <ul class="resultados cerca-lista">
               @for (c of cercanas(); track c.parada.id; let i = $index) {
                 <li>
@@ -102,26 +130,22 @@
               }
             </ul>
           } @else {
-            <p class="tenue cerca-estado">No hay paradas con ubicación cerca de ti.</p>
+            <p class="tenue cerca-estado">{{ t('sin_cercanas') }}</p>
           }
         }
         @case ('pidiendo') {
-          <p class="tenue cerca-estado">Buscando tu ubicación…</p>
+          <p class="tenue cerca-estado">{{ t('buscando_ubicacion') }}</p>
         }
         @case ('denegado') {
-          <p class="tenue cerca-estado">
-            Ubicación denegada. Puedes buscar tu parada por nombre o línea abajo.
-          </p>
+          <p class="tenue cerca-estado">{{ t('geo_denegada') }}</p>
         }
         @case ('no-soportado') {
-          <p class="tenue cerca-estado">
-            Tu navegador no da ubicación. Busca tu parada abajo.
-          </p>
+          <p class="tenue cerca-estado">{{ t('geo_no_soportado') }}</p>
         }
         @case ('error') {
           <p class="tenue cerca-estado">
-            No pude obtener tu ubicación.
-            <button type="button" class="enlace" (click)="ubicar()">Reintentar</button>
+            {{ t('geo_error') }}
+            <button type="button" class="enlace" (click)="ubicar()">{{ t('reintentar') }}</button>
           </p>
         }
         @default {
@@ -133,24 +157,24 @@
               <rect x="4" y="8" width="4" height="1" /><rect x="5" y="9" width="2" height="2" />
               <rect x="5" y="4" width="2" height="2" fill="var(--acento)" />
             </svg>
-            Paradas cerca de mí
+            {{ t('cta_cerca') }}
           </button>
         }
       }
     </div>
     } @else {
-    <label for="q">Elige parada</label>
+    <label for="q">{{ t('elige_parada') }}</label>
     <input
       id="q"
       type="search"
       inputmode="search"
       autocomplete="off"
-      placeholder="Busca por nombre o línea (p. ej. O'Connell, 46A)"
+      [placeholder]="t('ph_buscar')"
       [value]="busqueda()"
       (input)="buscar($any($event.target).value)" />
 
     @if (favoritasParadas().length) {
-      <h3 class="grupo">Favoritas</h3>
+      <h3 class="grupo">{{ t('favoritas') }}</h3>
       <ul class="resultados">
         @for (p of favoritasParadas(); track p.id) {
           <li>
@@ -171,7 +195,7 @@
                 class="estrella activa"
                 data-test="favorita"
                 role="button"
-                aria-label="Quitar de favoritas"
+                [attr.aria-label]="t('quitar_fav')"
                 [attr.aria-pressed]="true"
                 (click)="alternarFavorita(p, $event)">★</span>
             </button>
@@ -181,7 +205,7 @@
     }
 
     @if (resultados().length) {
-      @if (favoritasParadas().length) { <h3 class="grupo">Todas</h3> }
+      @if (favoritasParadas().length) { <h3 class="grupo">{{ t('todas_grupo') }}</h3> }
       <ul class="resultados">
         @for (p of resultados(); track p.id) {
           <li>
@@ -202,7 +226,7 @@
                 class="estrella"
                 data-test="favorita"
                 role="button"
-                aria-label="Añadir a favoritas"
+                [attr.aria-label]="t('anadir_fav')"
                 [attr.aria-pressed]="false"
                 (click)="alternarFavorita(p, $event)">☆</span>
             </button>
@@ -210,13 +234,13 @@
         }
       </ul>
     } @else if (cargando()) {
-      <p class="tenue">Cargando paradas...</p>
+      <p class="tenue">{{ t('cargando_paradas') }}</p>
     } @else if (busqueda().trim()) {
-      <p class="tenue">Ninguna parada casa con «{{ busqueda().trim() }}».</p>
+      <p class="tenue">{{ t('sin_coincidencias', { q: busqueda().trim() }) }}</p>
     } @else if (pisteBuscar()) {
-      <p class="tenue">Escribe arriba para buscar entre {{ paradas().length }} paradas.</p>
+      <p class="tenue">{{ t('piste_buscar', { n: paradas().length }) }}</p>
     } @else if (!paradas().length) {
-      <p class="tenue">No hay ninguna parada con datos todavía.</p>
+      <p class="tenue">{{ t('sin_paradas') }}</p>
     }
     }
   </section>
@@ -237,21 +261,20 @@
 
     @if (rancio()) {
       <p class="error" data-test="rancio">
-        Los datos son de hace {{ datos()!.antiguedadSegundos }} s. La
-        recolección puede estar caída: no te fíes de estos minutos.
+        {{ t('rancio', { n: datos()!.antiguedadSegundos }) }}
       </p>
     }
 
     @if (datos(); as d) {
       @if (lineas().length > 1) {
-        <div class="filtro" data-test="filtro" role="group" aria-label="Filtrar por línea">
+        <div class="filtro" data-test="filtro" role="group" [attr.aria-label]="t('filtrar_linea')">
           <button
             type="button"
             class="chip"
             [class.activo]="!lineasElegidas().length"
             [attr.aria-pressed]="!lineasElegidas().length"
             (click)="verTodas()">
-            Todas
+            {{ t('todas') }}
           </button>
           @for (linea of lineas(); track linea) {
             <button
@@ -297,22 +320,22 @@
         }
       } @else if (filtradasTodas()) {
         <p class="tenue">
-          Ninguna de las líneas elegidas llega en los próximos 90 minutos.
-          <button type="button" class="enlace" (click)="verTodas()">Ver todas</button>
+          {{ t('ninguna_linea') }}
+          <button type="button" class="enlace" (click)="verTodas()">{{ t('ver_todas') }}</button>
         </p>
       } @else {
-        <p class="tenue">Sin llegadas en los próximos 90 minutos.</p>
+        <p class="tenue">{{ t('sin_llegadas') }}</p>
       }
 
       <footer class="pie">
-        <span>Actualizado a las {{ horaActualizado() }}</span>
-        <span [class.rancio]="rancio()">· feed de hace {{ d.antiguedadSegundos }} s</span>
+        <span>{{ t('actualizado', { hora: horaActualizado() }) }}</span>
+        <span [class.rancio]="rancio()">{{ t('feed_hace', { n: d.antiguedadSegundos }) }}</span>
         <button type="button" (click)="refrescar()" [disabled]="cargando()">
-          {{ cargando() ? 'Actualizando...' : 'Actualizar' }}
+          {{ cargando() ? t('actualizando') : t('actualizar') }}
         </button>
       </footer>
     } @else if (!error()) {
-      <p class="tenue">Cargando llegadas...</p>
+      <p class="tenue">{{ t('cargando_llegadas') }}</p>
     }
   </section>
 }
