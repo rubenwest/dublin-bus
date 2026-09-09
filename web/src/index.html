@@ -7,8 +7,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="Llegadas de autobús en Dublín en tiempo real, sobre el feed GTFS-Realtime de la NTA.">
   <meta name="theme-color" content="#0e1014">
-  <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <!-- El .ico primero (fallback) y el SVG despues: Chromium prefiere el SVG,
+       y el ?v fuerza a refrescar el favicon cacheado tras el cambio de icono. -->
+  <link rel="icon" href="favicon.ico?v=2" sizes="32x32">
+  <link rel="icon" href="favicon.svg?v=2" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
   <!-- Fuentes retro: pixel para números y títulos, monoespaciada legible para
        el texto. Progresivas: si no cargan (offline), caen a monospace del
