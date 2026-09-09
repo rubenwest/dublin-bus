@@ -108,4 +108,28 @@ export class Api {
       llegadas: (f.llegadas ?? []) as Llegada[],
     };
   }
+
+  /**
+   * Guarda un mensaje de feedback en la tabla `feedback`. Funciona con la clave
+   * publicable porque el RLS da INSERT a `anon` y ninguna policy de SELECT: se
+   * puede escribir pero no leer lo que escriben otros.
+   *
+   * `Prefer: return=minimal` es obligatorio: sin él PostgREST intenta devolver
+   * la fila recién creada, y como no hay policy de SELECT esa lectura da 0 filas
+   * y el POST falla. Con `minimal` PostgREST responde 201 sin leer nada.
+   */
+  async enviarFeedback(texto: string, contacto?: string, parada?: string): Promise<void> {
+    await firstValueFrom(
+      this.http.post(
+        `${entorno.supabaseUrl}/rest/v1/feedback`,
+        {
+          texto,
+          contacto: contacto?.trim() || null,
+          parada: parada ?? null,
+          user_agent: navigator.userAgent.slice(0, 400),
+        },
+        { headers: { ...this.cabeceras, Prefer: 'return=minimal' } },
+      ),
+    );
+  }
 }

@@ -533,3 +533,99 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: 3px 3px 0 var(--har
 .bandera.activo { border-color: var(--acento); box-shadow: 2px 2px 0 var(--acento); }
 .bandera:hover:not(:disabled) { border-color: var(--acento); }
 .bandera:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: none; }
+
+/* --- Feedback ------------------------------------------------------------ */
+
+/* Separado del contenido por una línea dura, para que se lea como pie de página
+   y no compita con las llegadas. */
+.feedback {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 2px solid var(--borde);
+}
+
+/* El disparador es texto-enlace, como las migas: es secundario y no debe robar
+   la vista a lo de arriba. */
+.enlace-feedback {
+  border: none;
+  background: none;
+  box-shadow: none;
+  padding: 0.5rem 0;
+  min-height: 44px;
+  font-family: var(--mono);
+  color: var(--acento);
+  text-decoration: underline;
+  font-size: 0.85rem;
+}
+.enlace-feedback:hover:not(:disabled) { border: none; color: var(--bus); }
+.enlace-feedback:active:not(:disabled) { transform: none; box-shadow: none; }
+
+.panel-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+/* Etiquetas en fuente pixel diminuta, como las del buscador. */
+.panel-feedback label {
+  font-family: var(--pixel);
+  font-size: 0.5rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--tenue);
+  margin-top: 0.6rem;
+}
+
+/* Campos 8-bit: bordes y sombra duros, sin radio, monoespaciada. Igual que el
+   input del buscador, para que la pantalla sea una sola cosa. */
+.panel-feedback textarea,
+.panel-feedback input {
+  width: 100%;
+  font: inherit;
+  font-family: var(--mono);
+  padding: 0.7rem 0.75rem;
+  border-radius: 0;
+  border: 3px solid var(--hard);
+  box-shadow: 4px 4px 0 var(--hard);
+  background: var(--fondo);
+  color: inherit;
+  resize: vertical;
+}
+.panel-feedback textarea:focus,
+.panel-feedback input:focus {
+  outline: 3px solid var(--acento);
+  outline-offset: 0;
+  border-color: var(--acento);
+}
+
+/* El botón de enviar es la acción principal del panel: relleno de acento con su
+   texto propio, como la entrada de "cerca de ti". */
+.panel-feedback .enviar {
+  align-self: flex-start;
+  margin-top: 0.6rem;
+  font-family: var(--pixel);
+  font-size: 0.6rem;
+  line-height: 1.5;
+  background: var(--acento);
+  color: var(--acento-texto);
+  border-color: var(--hard);
+}
+.panel-feedback .enviar:hover:not(:disabled) {
+  border-color: var(--hard);
+  filter: brightness(1.06);
+}
+
+.panel-feedback .ok {
+  font-family: var(--mono);
+  color: var(--acento);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.panel-feedback .whatsapp {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--tenue);
+  margin: 0.7rem 0 0;
+}
+.panel-feedback .whatsapp a { color: var(--acento); }

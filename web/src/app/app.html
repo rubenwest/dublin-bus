@@ -339,3 +339,59 @@
     }
   </section>
 }
+
+<footer class="feedback">
+  <button
+    type="button"
+    class="enlace-feedback"
+    data-test="abrir-feedback"
+    [attr.aria-expanded]="feedbackAbierto()"
+    (click)="alternarFeedback()">
+    {{ feedbackAbierto() ? t('feedback_cerrar') : t('feedback_abrir') }}
+  </button>
+
+  @if (feedbackAbierto()) {
+    <div class="panel-feedback" data-test="panel-feedback">
+      @if (feedbackEstado() === 'enviado') {
+        <p class="ok" data-test="feedback-ok">{{ t('feedback_ok') }}</p>
+      } @else {
+        <label for="fb-texto">{{ t('feedback_tu_mensaje') }}</label>
+        <textarea
+          id="fb-texto"
+          rows="3"
+          maxlength="2000"
+          [placeholder]="t('feedback_ph_mensaje')"
+          [value]="feedbackTexto()"
+          (input)="feedbackTexto.set($any($event.target).value)"></textarea>
+
+        <label for="fb-contacto">{{ t('feedback_contacto_label') }}</label>
+        <input
+          id="fb-contacto"
+          type="text"
+          maxlength="200"
+          autocomplete="off"
+          [placeholder]="t('feedback_ph_contacto')"
+          [value]="feedbackContacto()"
+          (input)="feedbackContacto.set($any($event.target).value)" />
+
+        @if (feedbackEstado() === 'error') {
+          <p class="error" data-test="feedback-error">{{ t('feedback_error') }}</p>
+        }
+
+        <button
+          type="button"
+          class="enviar"
+          data-test="enviar-feedback"
+          [disabled]="!puedeEnviarFeedback()"
+          (click)="enviarFeedback()">
+          {{ feedbackEstado() === 'enviando' ? t('feedback_enviando') : t('feedback_enviar') }}
+        </button>
+      }
+
+      <p class="whatsapp">
+        {{ t('feedback_wa_pre') }}
+        <a [href]="whatsappUrl()" target="_blank" rel="noopener" data-test="whatsapp">WhatsApp</a>.
+      </p>
+    </div>
+  }
+</footer>

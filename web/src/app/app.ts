@@ -4,6 +4,9 @@ import { Api, Llegada, Llegadas, Parada } from './api';
 import { entorno } from './entorno';
 import { Idioma, traducir } from './i18n';
 
+/** Estado del envío de feedback, para no repetir strings sueltos por ahí. */
+type EnvioFeedback = 'inactivo' | 'enviando' | 'enviado' | 'error';
+
 const CLAVE_ULTIMA = 'dublin-bus.ultima-parada';
 const CLAVE_LINEAS = 'dublin-bus.lineas';
 const CLAVE_FAV = 'dublin-bus.favoritas';
@@ -240,6 +243,23 @@ export class App implements OnDestroy {
       };
     });
   });
+
+  // --- Feedback -------------------------------------------------------------
+
+  /** El panel de feedback está abierto. */
+  readonly feedbackAbierto = signal(false);
+  readonly feedbackTexto = signal('');
+  readonly feedbackContacto = signal('');
+  readonly feedbackEstado = signal<EnvioFeedback>('inactivo');
+
+  /**
+   * Enlace `wa.me` con un saludo prerrellenado. Se abre en la app de WhatsApp.
+   * El saludo va en el idioma de la interfaz.
+   */
+  readonly whatsappUrl = computed(
+    () =>
+      `https://wa.me/${entorno.whatsapp}?text=${encodeURIComponent(this.t('feedback_saludo_wa'))}`,
+  );
 
   private temporizador: ReturnType<typeof setInterval> | null = null;
   private comprobarVersion: ReturnType<typeof setInterval> | null = null;
@@ -648,5 +668,37 @@ export class App implements OnDestroy {
     return d
       ? d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       : '';
+  }
+
+  // --- Feedback -------------------------------------------------------------
+
+  alternarFeedback(): void {
+    this.feedbackAbierto.update((v) => !v);
+    // Al reabrir tras un envío correcto, se empieza de cero.
+    if (this.feedbackAbierto() && this.feedbackEstado() === 'enviado') {
+      this.feedbackEstado.set('inactivo');
+    }
+  }
+
+  /** Se envía si hay texto y no hay un envío en curso. */
+  puedeEnviarFeedback(): boolean {
+    return this.feedbackTexto().trim().length > 0 && this.feedbackEstado() !== 'enviando';
+  }
+
+  async enviarFeedback(): Promise<void> {
+    if (!this.puedeEnviarFeedback()) return;
+    this.feedbackEstado.set('enviando');
+    try {
+      await this.api.enviarFeedback(
+        this.feedbackTexto().trim(),
+        this.feedbackContacto(),
+        this.parada()?.id,
+      );
+      this.feedbackEstado.set('enviado');
+      this.feedbackTexto.set('');
+      this.feedbackContacto.set('');
+    } catch {
+      this.feedbackEstado.set('error');
+    }
   }
 }

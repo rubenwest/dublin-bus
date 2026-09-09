@@ -15,4 +15,11 @@ export const entorno = {
 
   /** Cada cuánto refresca la pantalla. El cron escribe cada minuto. */
   refrescoMs: 20_000,
+
+  /**
+   * WhatsApp para el feedback directo. En formato internacional sin `+` ni
+   * espacios, que es lo que quiere `wa.me`: 34 (España) + el número.
+   * Va a propósito en el bundle público; es el precio de ofrecer WhatsApp.
+   */
+  whatsapp: '34600707224',
 };
