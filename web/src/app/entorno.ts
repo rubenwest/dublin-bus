@@ -21,5 +21,5 @@ export const entorno = {
    * espacios, que es lo que quiere `wa.me`: 34 (España) + el número.
    * Va a propósito en el bundle público; es el precio de ofrecer WhatsApp.
    */
-  whatsapp: '34600707224',
+  whatsapp: '34600797224',
 };
