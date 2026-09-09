@@ -11,8 +11,38 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.75rem;
 }
+
+/* Camino de migas: la orientación de cada pantalla. La miga actual pesa; las
+   anteriores son enlaces para volver. */
+.migas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--tenue);
+  margin-bottom: 1.25rem;
+}
+.miga { color: var(--tenue); }
+.miga.actual { color: var(--texto); font-weight: 600; }
+.sep { color: var(--tenue); opacity: 0.6; }
+/* Las migas que enlazan se ven como texto-enlace, no como botón de barra. */
+button.miga {
+  border: none;
+  background: none;
+  box-shadow: none;
+  min-height: 0;
+  padding: 0.25rem 0.1rem;
+  font: inherit;
+  color: var(--acento);
+  text-decoration: underline;
+  cursor: pointer;
+}
+button.miga:hover:not(:disabled) { color: var(--bus); border-color: transparent; }
+button.miga:active:not(:disabled) { transform: none; box-shadow: none; }
 
 /* Título en fuente pixel. Pequeño y con interletra para que quepa a 375px; si
    se queda sin sitio, envuelve en dos líneas legibles en vez de recortarse. */
@@ -155,13 +185,14 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: 3px 3px 0 var(--har
    deja claro sin depender del icono. */
 .tipo-badge {
   font-family: var(--pixel);
-  font-size: 0.5rem;
+  font-size: 0.4rem;
   letter-spacing: 0.05em;
-  padding: 0.35rem 0.45rem;
+  padding: 0.22rem 0.3rem;
   color: #241a00;
   background: var(--bus);
   border: 2px solid var(--hard);
   white-space: nowrap;
+  align-self: center;
 }
 .tipo-badge.luas {
   background: var(--luas);

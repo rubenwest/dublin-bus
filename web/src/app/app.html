@@ -1,9 +1,26 @@
 <header class="cabecera">
   <h1>Llegadas · Dublín</h1>
-  @if (parada()) {
-    <button class="volver" type="button" (click)="volver()">Cambiar parada</button>
-  }
 </header>
+
+<!-- Camino de migas: dónde estás y cómo volver a donde estabas. La miga del
+     medio (Cerca de ti / Buscar parada) recuerda desde qué pantalla entraste. -->
+<nav class="migas" aria-label="Dónde estás">
+  @if (parada()) {
+    <button type="button" class="miga" data-test="miga-inicio" (click)="volver()">Inicio</button>
+    <span class="sep" aria-hidden="true">›</span>
+    <button type="button" class="miga" data-test="miga-modo" (click)="volver()">
+      {{ modo() === 'cerca' ? 'Cerca de ti' : 'Buscar parada' }}
+    </button>
+    <span class="sep" aria-hidden="true">›</span>
+    <span class="miga actual" aria-current="page">{{ parada()!.nombre }}</span>
+  } @else {
+    <span class="miga">Inicio</span>
+    <span class="sep" aria-hidden="true">›</span>
+    <span class="miga actual" aria-current="page">
+      {{ modo() === 'cerca' ? 'Cerca de ti' : 'Buscar parada' }}
+    </span>
+  }
+</nav>
 
 @if (error() && !parada()) {
   <p class="error">{{ error() }}</p>
