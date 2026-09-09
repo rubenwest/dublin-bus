@@ -29,6 +29,36 @@ function normaliza(s: string): string {
   return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
+/** Recuerda que ya se concedió la ubicación, para localizar sin volver a pedir. */
+const CLAVE_GEO = 'dublin-bus.geo-ok';
+/** Cuántas paradas cercanas se pintan en el radar y su lista. */
+const RADAR_CERCANAS = 6;
+/** Radio del área del radar en el SVG (viewBox 300, centro 150). */
+const RADAR_MAX_R = 118;
+
+/** Distancia en metros entre dos puntos (haversine). */
+function distanciaMetros(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6_371_000;
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const dLat = rad(lat2 - lat1);
+  const dLon = rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+/** Rumbo en grados desde el punto 1 hacia el 2: 0 = norte, sentido horario. */
+function rumboGrados(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const dLon = rad(lon2 - lon1);
+  const y = Math.sin(dLon) * Math.cos(rad(lat2));
+  const x =
+    Math.cos(rad(lat1)) * Math.sin(rad(lat2)) -
+    Math.sin(rad(lat1)) * Math.cos(rad(lat2)) * Math.cos(dLon);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
 @Component({
   selector: 'app-root',
   templateUrl: './app.html',
@@ -49,6 +79,20 @@ export class App implements OnDestroy {
   readonly cargando = signal(false);
   readonly error = signal<string | null>(null);
   readonly actualizado = signal<Date | null>(null);
+
+  /** Ubicación del usuario, si la ha compartido. Solo alimenta "cerca de ti". */
+  readonly ubicacion = signal<{ lat: number; lon: number } | null>(null);
+  /** En qué punto está la petición de geolocalización. */
+  readonly estadoGeo = signal<
+    'inicial' | 'pidiendo' | 'ok' | 'denegado' | 'no-soportado' | 'error'
+  >('inicial');
+
+  /**
+   * Cómo elige parada quien entra: por cercanía (radar) o buscando por nombre.
+   * Arranca en 'buscar' a propósito, para no plantar el radar en la cara nada
+   * más abrir; el radar se ve al tocar su pestaña.
+   */
+  readonly modo = signal<'cerca' | 'buscar'>('buscar');
 
   /**
    * Líneas elegidas en el filtro. Vacío significa "todas", no "ninguna": es
@@ -147,12 +191,60 @@ export class App implements OnDestroy {
     () => !this.busqueda().trim() && this.paradas().length > LISTA_SIN_BUSCAR,
   );
 
+  /**
+   * Las paradas más cercanas a la ubicación, con su distancia y rumbo ya
+   * calculados. Vacío si aún no hay ubicación. Solo entran las que tienen
+   * coordenadas; el catálogo las trae casi todas.
+   */
+  readonly cercanas = computed(() => {
+    const u = this.ubicacion();
+    if (!u) return [];
+    return this.paradas()
+      .filter((p) => p.lat != null && p.lon != null)
+      .map((p) => ({
+        parada: p,
+        metros: distanciaMetros(u.lat, u.lon, p.lat!, p.lon!),
+        rumbo: rumboGrados(u.lat, u.lon, p.lat!, p.lon!),
+      }))
+      .sort((a, b) => a.metros - b.metros)
+      .slice(0, RADAR_CERCANAS);
+  });
+
+  /**
+   * Radio que abarca el radar, en metros: la más lejana de las mostradas,
+   * redondeada a la centena y con un mínimo de 300 m para que de pie a una
+   * parada no salga todo pegado al centro.
+   */
+  readonly radioMetros = computed(() => {
+    const c = this.cercanas();
+    if (!c.length) return 300;
+    return Math.max(300, Math.ceil(c[c.length - 1].metros / 100) * 100);
+  });
+
+  /** Posición y color de cada parada cercana dentro del SVG del radar. */
+  readonly radarBlips = computed(() => {
+    const radio = this.radioMetros();
+    return this.cercanas().map((c, i) => {
+      const rr = Math.min(c.metros / radio, 1) * RADAR_MAX_R;
+      const a = (c.rumbo * Math.PI) / 180;
+      return {
+        x: +(150 + rr * Math.sin(a)).toFixed(1),
+        y: +(150 - rr * Math.cos(a)).toFixed(1),
+        color: this.esTram(c.parada) ? this.colorLuas(c.parada) : 'bus',
+        n: i + 1,
+      };
+    });
+  });
+
   private temporizador: ReturnType<typeof setInterval> | null = null;
   private comprobarVersion: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     void this.cargarParadas();
     this.vigilarActualizaciones();
+    // Si ya dio permiso en una visita anterior, localizar sin volver a pedir:
+    // así "cerca de ti" es de verdad la pantalla de inicio y no un botón más.
+    if (this.geoConcedidoAntes()) this.ubicar();
   }
 
   ngOnDestroy(): void {
@@ -242,6 +334,69 @@ export class App implements OnDestroy {
    */
   esTram(p: Parada): boolean {
     return p.id.startsWith('8220GA');
+  }
+
+  /**
+   * El Luas se llama por colores (Red, Green), así que el punto del radar toma
+   * el color de su línea en vez del magenta genérico. Un intercambiador que
+   * sirve las dos se pinta 'both' (magenta), que es justo "las dos".
+   */
+  private colorLuas(p: Parada): 'green' | 'red' | 'both' {
+    const l = p.lineas.map((x) => x.toLowerCase());
+    const red = l.includes('red');
+    const green = l.includes('green');
+    if (red && green) return 'both';
+    return red ? 'red' : 'green';
+  }
+
+  // --- Cerca de ti (geolocalización) ---------------------------------------
+
+  /** Abre la pestaña del radar y localiza (si no lo está ya). */
+  verCerca(): void {
+    this.modo.set('cerca');
+    if (this.estadoGeo() !== 'ok') this.ubicar();
+  }
+
+  private geoConcedidoAntes(): boolean {
+    try {
+      return localStorage.getItem(CLAVE_GEO) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Pide la ubicación y ordena las paradas por cercanía. Bajo demanda (o
+   * automático si ya se concedió), nunca al primer arranque sin permiso: un
+   * prompt del navegador en frío ahuyenta. Norte siempre arriba; la brújula
+   * del móvil pide su propio permiso y se deja para más adelante.
+   */
+  ubicar(): void {
+    if (!('geolocation' in navigator)) {
+      this.estadoGeo.set('no-soportado');
+      return;
+    }
+    this.estadoGeo.set('pidiendo');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        this.ubicacion.set({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        this.estadoGeo.set('ok');
+        try {
+          localStorage.setItem(CLAVE_GEO, '1');
+        } catch {
+          /* modo privado: no se recuerda, se volverá a pulsar el botón */
+        }
+      },
+      (err) => {
+        this.estadoGeo.set(err.code === err.PERMISSION_DENIED ? 'denegado' : 'error');
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
+    );
+  }
+
+  /** "450 m" cerca, "1.2 km" lejos. */
+  distanciaTexto(metros: number): string {
+    return metros < 1000 ? `${Math.round(metros)} m` : `${(metros / 1000).toFixed(1)} km`;
   }
 
   /**

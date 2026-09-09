@@ -11,6 +11,117 @@
 
 @if (!parada()) {
   <section class="buscador">
+    <div class="modos" role="group" aria-label="Cómo elegir la parada">
+      <button type="button" class="modo" data-test="modo-cerca"
+        [class.activo]="modo() === 'cerca'" (click)="verCerca()">Cerca de ti</button>
+      <button type="button" class="modo" data-test="modo-buscar"
+        [class.activo]="modo() === 'buscar'" (click)="modo.set('buscar')">Buscar parada</button>
+    </div>
+
+    @if (modo() === 'cerca') {
+    <!-- Cerca de ti: el radar retro con las paradas alrededor. Se localiza al
+         entrar en esta pestaña; si ya se concedió el permiso, sin volver a pedir. -->
+    <div class="cerca">
+      @switch (estadoGeo()) {
+        @case ('ok') {
+          @if (cercanas().length) {
+            <div class="radarwrap">
+              <svg class="radar" viewBox="0 0 300 300" role="img"
+                   aria-label="Radar de paradas cercanas, tú en el centro">
+                <circle class="r-bezel" cx="150" cy="150" r="140" />
+                <circle class="r-screen" cx="150" cy="150" r="126" />
+                <circle class="r-ring" cx="150" cy="150" r="118" />
+                <circle class="r-ring" cx="150" cy="150" r="78.7" />
+                <circle class="r-ring" cx="150" cy="150" r="39.3" />
+                <g class="r-spoke">
+                  <line x1="150" y1="32" x2="150" y2="268" />
+                  <line x1="32" y1="150" x2="268" y2="150" />
+                  <line x1="66" y1="66" x2="234" y2="234" />
+                  <line x1="234" y1="66" x2="66" y2="234" />
+                </g>
+                <g>
+                  <path class="r-sweep" d="M150,150 L180.5,36 A118,118 0 0 1 246.7,82.3 Z" />
+                  <line class="r-sweep-edge" x1="150" y1="150" x2="246.7" y2="82.3" />
+                  <animateTransform attributeName="transform" type="rotate"
+                    from="0 150 150" to="360 150 150" dur="6s" repeatCount="indefinite" />
+                </g>
+                @for (b of radarBlips(); track b.n) {
+                  <rect class="blip"
+                    [class.luas-green]="b.color === 'green'"
+                    [class.luas-red]="b.color === 'red'"
+                    [class.luas-both]="b.color === 'both'"
+                    [attr.x]="b.x - 3.5" [attr.y]="b.y - 3.5" width="7" height="7" />
+                  <text class="blip-num" [attr.x]="b.x + 5" [attr.y]="b.y - 4">{{ b.n }}</text>
+                }
+                <circle class="you-pulse" cx="150" cy="150" r="6">
+                  <animate attributeName="r" values="5;16;5" dur="2.4s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="0.7;0;0.7" dur="2.4s" repeatCount="indefinite" />
+                </circle>
+                <rect class="you" x="147" y="147" width="6" height="6" />
+                <text class="r-n" x="150" y="24" text-anchor="middle">N</text>
+              </svg>
+            </div>
+
+            <h3 class="grupo">Cerca de ti · radio {{ radioMetros() }} m</h3>
+            <ul class="resultados cerca-lista">
+              @for (c of cercanas(); track c.parada.id; let i = $index) {
+                <li>
+                  <button type="button" data-test="cercana" (click)="seleccionar(c.parada)">
+                    <span class="cerca-num" [class.luas]="esTram(c.parada)">{{ i + 1 }}</span>
+                    <span class="sprite" [class.tram]="esTram(c.parada)" aria-hidden="true"></span>
+                    <span class="info">
+                      <span class="nombre">{{ c.parada.nombre }}</span>
+                      @if (c.parada.lineas.length) {
+                        <span class="lineas-parada">
+                          @for (l of c.parada.lineas; track l) {
+                            <span class="linea-chip">{{ l }}</span>
+                          }
+                        </span>
+                      }
+                    </span>
+                    <span class="cerca-dist">{{ distanciaTexto(c.metros) }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+          } @else {
+            <p class="tenue cerca-estado">No hay paradas con ubicación cerca de ti.</p>
+          }
+        }
+        @case ('pidiendo') {
+          <p class="tenue cerca-estado">Buscando tu ubicación…</p>
+        }
+        @case ('denegado') {
+          <p class="tenue cerca-estado">
+            Ubicación denegada. Puedes buscar tu parada por nombre o línea abajo.
+          </p>
+        }
+        @case ('no-soportado') {
+          <p class="tenue cerca-estado">
+            Tu navegador no da ubicación. Busca tu parada abajo.
+          </p>
+        }
+        @case ('error') {
+          <p class="tenue cerca-estado">
+            No pude obtener tu ubicación.
+            <button type="button" class="enlace" (click)="ubicar()">Reintentar</button>
+          </p>
+        }
+        @default {
+          <button type="button" class="cerca-cta" data-test="ubicar" (click)="ubicar()">
+            <svg class="cerca-pin" viewBox="0 0 12 12" aria-hidden="true"
+                 shape-rendering="crispEdges" fill="currentColor">
+              <rect x="4" y="1" width="4" height="1" /><rect x="3" y="2" width="6" height="1" />
+              <rect x="2" y="3" width="8" height="4" /><rect x="3" y="7" width="6" height="1" />
+              <rect x="4" y="8" width="4" height="1" /><rect x="5" y="9" width="2" height="2" />
+              <rect x="5" y="4" width="2" height="2" fill="var(--acento)" />
+            </svg>
+            Paradas cerca de mí
+          </button>
+        }
+      }
+    </div>
+    } @else {
     <label for="q">Elige parada</label>
     <input
       id="q"
@@ -90,12 +201,16 @@
     } @else if (!paradas().length) {
       <p class="tenue">No hay ninguna parada con datos todavía.</p>
     }
+    }
   </section>
 } @else {
   <section class="parada">
     <div class="titulo">
       <span class="sprite grande" [class.tram]="esTram(parada()!)" aria-hidden="true"></span>
       <h2>{{ parada()!.nombre }}</h2>
+      <span class="tipo-badge" [class.luas]="esTram(parada()!)">
+        {{ esTram(parada()!) ? 'LUAS' : 'BUS' }}
+      </span>
     </div>
     <p class="codigo">{{ parada()!.id }}</p>
 

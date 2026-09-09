@@ -146,8 +146,26 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: 3px 3px 0 var(--har
 
 .titulo {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+}
+
+/* Etiqueta LUAS/BUS junto al nombre: el sprite ya lo dice, pero el texto lo
+   deja claro sin depender del icono. */
+.tipo-badge {
+  font-family: var(--pixel);
+  font-size: 0.5rem;
+  letter-spacing: 0.05em;
+  padding: 0.35rem 0.45rem;
+  color: #241a00;
+  background: var(--bus);
+  border: 2px solid var(--hard);
+  white-space: nowrap;
+}
+.tipo-badge.luas {
+  background: var(--luas);
+  color: #2a0026;
 }
 
 .sprite.tram {
@@ -364,4 +382,100 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: 3px 3px 0 var(--har
   font-family: var(--mono);
   font-size: 0.78rem;
   line-height: 1.45;
+}
+
+/* --- Selector de modo (cerca de ti / buscar) ----------------------------- */
+
+/* Dos pestañas que se reparten el ancho. Se elige aquí para no plantar el
+   radar en la cara nada más entrar. */
+.modos {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+.modo {
+  flex: 1 1 0;
+  font-family: var(--pixel);
+  font-size: 0.55rem;
+  line-height: 1.5;
+  padding: 0.7rem 0.4rem;
+}
+.modo.activo {
+  background: var(--acento);
+  color: var(--acento-texto);
+  border-color: var(--hard);
+}
+
+/* --- Cerca de ti (radar) ------------------------------------------------- */
+
+.cerca { margin-bottom: 1.75rem; }
+
+/* Botón de entrada: es la acción principal de la pantalla de inicio, así que
+   va en el color "en vivo" y a todo el ancho. */
+.cerca-cta {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  font-family: var(--pixel);
+  font-size: 0.6rem;
+  line-height: 1.5;
+  background: var(--acento);
+  color: var(--acento-texto);
+  border-color: var(--hard);
+}
+.cerca-cta:hover:not(:disabled) {
+  border-color: var(--hard);
+  filter: brightness(1.06);
+}
+.cerca-pin { width: 14px; height: 14px; flex: 0 0 auto; }
+
+.cerca-estado { margin: 0.25rem 0 0.75rem; }
+
+.radarwrap {
+  display: flex;
+  justify-content: center;
+  margin: 0.25rem 0 0.75rem;
+}
+/* La pantalla del radar es verde apagado en los dos temas: es una pantalla,
+   no cambia con el tema de la app. Los colores de aquí son fijos a propósito. */
+.radar { width: 100%; max-width: 300px; height: auto; display: block; }
+.r-bezel { fill: var(--fondo2); stroke: var(--hard); stroke-width: 4; }
+.r-screen { fill: #13241b; }
+.r-ring { fill: none; stroke: #22452f; stroke-width: 1.5; stroke-dasharray: 2 4; }
+.r-spoke line { stroke: #1d3a28; stroke-width: 1.2; }
+.r-sweep { fill: #46a074; opacity: 0.18; }
+.r-sweep-edge { stroke: #8fcfa6; stroke-width: 1.5; opacity: 0.5; }
+.r-n, .blip-num { font-family: var(--pixel); font-size: 8px; fill: #8fcfa6; }
+.blip-num { fill: #cfe8d6; }
+.blip { fill: var(--bus); shape-rendering: crispEdges; }
+.blip.luas-green { fill: var(--luas-green); }
+.blip.luas-red { fill: var(--luas-red); }
+.blip.luas-both { fill: var(--luas); }
+.you { fill: #eafff0; shape-rendering: crispEdges; }
+.you-pulse { fill: none; stroke: #8fcfa6; stroke-width: 1.5; }
+
+.cerca-lista button { gap: 0.6rem; }
+.cerca-lista .info { gap: 0.25rem; }
+.cerca-num {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--pixel);
+  font-size: 0.6rem;
+  color: #241a00;
+  background: var(--bus);
+  border: 2px solid var(--hard);
+}
+.cerca-num.luas { background: var(--luas); color: #2a0026; }
+.cerca-dist {
+  flex: 0 0 auto;
+  font-family: var(--pixel);
+  font-size: 0.6rem;
+  color: var(--acento);
+  white-space: nowrap;
 }

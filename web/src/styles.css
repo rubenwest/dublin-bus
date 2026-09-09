@@ -14,6 +14,10 @@
   /* Los dos vehículos, mismos colores que los sprites pixel-art. */
   --bus: #f2b705;
   --luas: #b4179f;
+  /* Líneas del Luas por su color real (Green/Red). Son marca, iguales en
+     claro y oscuro; se usan en los puntos del radar. */
+  --luas-green: #16b34a;
+  --luas-red: #e23b3b;
   --malo: #c62828;
   --malo-fondo: #fdeaea;
 
