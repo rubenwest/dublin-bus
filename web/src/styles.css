@@ -1,23 +1,39 @@
 :root {
-  --fondo: #ffffff;
-  --fondo2: #f3f4f6;
+  --fondo: #f4f5f7;
+  --fondo2: #eceef2;
   --texto: #16181d;
-  --tenue: #6b7280;
-  --borde: #e3e5e9;
-  --acento: #1c6feb;
+  --tenue: #5f6672;
+  --borde: #d9dce2;
+  /* Sombra/borde "duro" del 8-bit: en claro es un gris medio para que la
+     sombra dura se vea sobre fondo claro. */
+  --hard: #b9bec7;
+  /* Acento = color "en vivo" (los minutos, el foco, el chip activo). Teal
+     digital, distinto del ámbar del bus y del magenta del Luas. */
+  --acento: #0e9e80;
+  --acento-texto: #ffffff;
+  /* Los dos vehículos, mismos colores que los sprites pixel-art. */
+  --bus: #f2b705;
+  --luas: #b4179f;
   --malo: #c62828;
   --malo-fondo: #fdeaea;
+
+  --pixel: "Press Start 2P", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --fondo: #101216;
+    --fondo: #0e1014;
     --fondo2: #1a1d23;
     --texto: #e8eaed;
-    --tenue: #9aa1ad;
-    --borde: #262a32;
-    --acento: #64a0ff;
+    --tenue: #98a0ac;
+    --borde: #2b303b;
+    --hard: #05060a;
+    --acento: #35c6a5;
+    --acento-texto: #0e1014;
+    --bus: #f2b705;
+    --luas: #c026d3;
     --malo: #ff6b6b;
     --malo-fondo: #2a1618;
   }
@@ -29,7 +45,7 @@ html, body {
   margin: 0;
   background: var(--fondo);
   color: var(--texto);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--mono);
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
 }

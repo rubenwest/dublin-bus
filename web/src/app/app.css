@@ -7,28 +7,36 @@
 
 .cabecera {
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
   margin-bottom: 1.5rem;
 }
 
+/* Título en fuente pixel. Pequeño y con interletra para que quepa a 375px; si
+   se queda sin sitio, envuelve en dos líneas legibles en vez de recortarse. */
 h1 {
-  font-size: 1.1rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-family: var(--pixel);
+  font-size: 0.62rem;
+  line-height: 1.6;
+  letter-spacing: 0.05em;
   margin: 0;
 }
 
+/* El nombre de la parada se lee entero, así que va en monoespaciada (no pixel):
+   los nombres largos en Press Start 2P serían ilegibles. */
 h2 {
-  font-size: 1.4rem;
+  font-family: var(--mono);
+  font-size: 1.25rem;
+  font-weight: 600;
   margin: 0;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .codigo {
-  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  font-size: 0.8rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
   color: var(--tenue);
   margin: 0.15rem 0 1.25rem;
 }
@@ -36,54 +44,69 @@ h2 {
 .tenue { color: var(--tenue); }
 .error { color: var(--malo); }
 
+/* Botón 8-bit: esquinas rectas, borde y sombra duros (sin blur), y un
+   "hundido" al pulsar que da tacto de tecla arcade. */
 button {
   font: inherit;
+  font-family: var(--mono);
   cursor: pointer;
-  border-radius: 0.4rem;
-  border: 1px solid var(--borde);
+  border-radius: 0;
+  border: 3px solid var(--hard);
+  box-shadow: 3px 3px 0 var(--hard);
   background: var(--fondo2);
   color: inherit;
   padding: 0.35rem 0.7rem;
 
-  /* Esto se usa de pie en una marquesina, con una mano y con prisa. 44px es
-     el mínimo que recomiendan Apple y las WCAG para tocar con el dedo; sin
-     esto salían de 29 a 42, y fallar el botón con el bus llegando es el peor
-     momento posible para pelearse con una interfaz. */
+  /* Se usa de pie en una marquesina, con una mano y con prisa. 44px es el
+     mínimo táctil de Apple y las WCAG. */
   min-height: 44px;
 }
 button:hover:not(:disabled) { border-color: var(--acento); }
-button:disabled { opacity: 0.5; cursor: default; }
+button:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--hard);
+}
+button:disabled { opacity: 0.5; cursor: default; box-shadow: 3px 3px 0 var(--hard); }
+
+.volver { font-size: 0.85rem; }
 
 /* --- Buscador ------------------------------------------------------------ */
 
 .buscador label {
   display: block;
-  font-size: 0.85rem;
+  font-family: var(--pixel);
+  font-size: 0.5rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--tenue);
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.55rem;
 }
 
 .buscador input {
   width: 100%;
   font: inherit;
-  padding: 0.6rem 0.75rem;
-  border-radius: 0.5rem;
-  border: 1px solid var(--borde);
-  background: var(--fondo2);
+  font-family: var(--mono);
+  padding: 0.7rem 0.75rem;
+  border-radius: 0;
+  border: 3px solid var(--hard);
+  box-shadow: 4px 4px 0 var(--hard);
+  background: var(--fondo);
   color: inherit;
 }
 .buscador input:focus {
-  outline: 2px solid var(--acento);
-  outline-offset: 1px;
+  outline: 3px solid var(--acento);
+  outline-offset: 0;
+  border-color: var(--acento);
 }
 
 .grupo {
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-family: var(--pixel);
+  font-size: 0.5rem;
+  font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--tenue);
-  margin: 1rem 0 0.35rem;
+  margin: 1.5rem 0 0.5rem;
 }
 
 .resultados {
@@ -91,7 +114,7 @@ button:disabled { opacity: 0.5; cursor: default; }
   margin: 0.35rem 0 0;
   padding: 0;
 }
-.resultados li + li { margin-top: 0.3rem; }
+.resultados li + li { margin-top: 0.6rem; }
 .resultados button {
   width: 100%;
   display: flex;
@@ -99,12 +122,13 @@ button:disabled { opacity: 0.5; cursor: default; }
   align-items: center;
   gap: 0.75rem;
   text-align: left;
-  padding: 0.55rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  box-shadow: 4px 4px 0 var(--hard);
 }
-/* Sprite pixel-art (8-bit, rollo 90s) que distingue de un vistazo un bus de un
-   tranvía del Luas. Colores fijos a propósito: llevan su propia sombra, así que
-   leen igual en claro y en oscuro sin depender del tema. crispEdges va dentro
-   del SVG, así que escala nítido a cualquier tamaño. */
+
+/* Sprite pixel-art (8-bit) que distingue de un vistazo un bus de un tranvía.
+   Colores fijos a propósito: llevan su propia sombra, así que leen igual en
+   claro y oscuro. */
 .sprite {
   flex: 0 0 auto;
   width: 26px;
@@ -115,14 +139,11 @@ button:disabled { opacity: 0.5; cursor: default; }
   image-rendering: pixelated;
   background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2016%2012'%20shape-rendering%3D'crispEdges'%3E%3Crect%20x%3D'1'%20y%3D'2'%20width%3D'14'%20height%3D'7'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'1'%20y%3D'2'%20width%3D'14'%20height%3D'1'%20fill%3D'%23ffd23f'%2F%3E%3Crect%20x%3D'2'%20y%3D'4'%20width%3D'12'%20height%3D'2'%20fill%3D'%23bfe9ff'%2F%3E%3Crect%20x%3D'4'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'7'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'10'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'1'%20y%3D'7'%20width%3D'14'%20height%3D'1'%20fill%3D'%23c98a00'%2F%3E%3Crect%20x%3D'2'%20y%3D'9'%20width%3D'2'%20height%3D'2'%20fill%3D'%232f2f37'%2F%3E%3Crect%20x%3D'11'%20y%3D'9'%20width%3D'2'%20height%3D'2'%20fill%3D'%232f2f37'%2F%3E%3C%2Fsvg%3E");
 }
-/* En la cabecera de llegadas el sprite acompaña al nombre grande, así que va
-   un punto mayor. */
 .sprite.grande {
   width: 34px;
   height: 26px;
 }
 
-/* Nombre de la parada con su icono al lado, en la pantalla de llegadas. */
 .titulo {
   display: flex;
   align-items: center;
@@ -134,34 +155,34 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 
 .resultados .info {
-  flex: 1 1 auto; /* crece para pegar el sprite al texto y empujar la estrella a la derecha */
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  min-width: 0; /* deja que el nombre largo se recorte en vez de empujar la estrella */
+  gap: 0.3rem;
+  min-width: 0;
 }
-.resultados .nombre { font-weight: 500; }
+.resultados .nombre { font-weight: 600; }
 .resultados .codigo { margin: 0; }
 
-/* Chips de línea de una parada: mismas líneas que la distinguen de las otras
-   "O'Connell St". Más pequeños que los del filtro, aquí solo informan. */
+/* Chips de línea de una parada: lo que distingue una "O'Connell St" de otra. */
 .lineas-parada {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 0.3rem;
 }
 .linea-chip {
+  font-family: var(--mono);
   font-size: 0.72rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  padding: 0.05rem 0.35rem;
-  border-radius: 0.25rem;
-  background: var(--fondo2);
-  border: 1px solid var(--borde);
+  padding: 0.1rem 0.4rem;
+  border-radius: 0;
+  background: var(--fondo);
+  border: 2px solid var(--borde);
 }
 
-/* La estrella es un control dentro del botón; se agranda a 44px de zona táctil
-   y no encoge cuando el nombre es largo. */
+/* La estrella activa va en ámbar (el color del bus), no en el acento: es un
+   marcador propio, no un estado "en vivo". */
 .estrella {
   flex: 0 0 auto;
   display: inline-flex;
@@ -172,53 +193,46 @@ button:disabled { opacity: 0.5; cursor: default; }
   font-size: 1.35rem;
   line-height: 1;
   color: var(--tenue);
-  border-radius: 0.4rem;
 }
-.estrella.activa { color: var(--acento); }
-.estrella:hover { color: var(--acento); }
+.estrella.activa { color: var(--bus); }
+.estrella:hover { color: var(--bus); }
 
 /* --- Filtro por línea ---------------------------------------------------- */
 
-/* Los chips van en fila y se envuelven. En una parada con siete líneas esto
-   ocupa dos filas; se prefiere eso a un desplegable, que obliga a abrir, leer
-   y elegir con el bus entrando. */
 .filtro {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-bottom: 0.9rem;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
 .chip {
-  /* El alto de 44px lo hereda de `button`; el ancho no, y un chip corto como
-     "E2" se quedaba en 41. Los 44 de las WCAG son en las dos direcciones. */
   min-width: 44px;
   padding: 0.3rem 0.75rem;
-  border-radius: 999px;
+  border-radius: 0;
+  font-family: var(--mono);
   font-size: 0.9rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-/* El texto del chip activo es el color del fondo de la página, no blanco fijo:
-   en claro sale blanco sobre azul y en oscuro sale casi negro sobre azul
-   claro. Blanco fijo se quedaba en 2:1 de contraste con el tema oscuro. */
 .chip.activo {
-  border-color: var(--acento);
+  border-color: var(--hard);
   background: var(--acento);
-  color: var(--fondo);
+  color: var(--acento-texto);
 }
 
-/* El botón de "ver todas" va dentro de una frase: que no parezca un botón
-   de barra, sino la continuación del texto. */
+/* El botón de "ver todas" va dentro de una frase: sin caja, como texto. */
 .enlace {
   border: none;
   background: none;
+  box-shadow: none;
   padding: 0 0.25rem;
   min-height: 0;
   color: var(--acento);
   text-decoration: underline;
 }
+.enlace:active:not(:disabled) { transform: none; box-shadow: none; }
 
 /* --- Llegadas ------------------------------------------------------------ */
 
@@ -226,77 +240,95 @@ button:disabled { opacity: 0.5; cursor: default; }
   list-style: none;
   margin: 0;
   padding: 0;
-  border-top: 1px solid var(--borde);
 }
 
+/* Cada llegada es una tarjeta con borde y sombra duros. */
 .llegada {
   display: grid;
-  grid-template-columns: 4.5rem 5rem 1fr;
+  grid-template-columns: 4.6rem 4.6rem 1fr;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.7rem 0.25rem;
-  border-bottom: 1px solid var(--borde);
+  gap: 0.6rem;
+  padding: 0.75rem;
+  margin-bottom: 0.6rem;
+  background: var(--fondo2);
+  border: 3px solid var(--hard);
+  box-shadow: 4px 4px 0 var(--hard);
 }
 
+/* La línea (39A, Green, Red...) en pixel. Pequeña y con hueco para que
+   "Green"/"Red" del Luas no se corten. */
 .linea {
-  font-weight: 700;
-  font-size: 1.05rem;
-  padding: 0.15rem 0.4rem;
-  border-radius: 0.3rem;
-  background: var(--fondo2);
+  font-family: var(--pixel);
+  font-size: 0.58rem;
+  line-height: 1.3;
+  padding: 0.5rem 0.2rem;
+  border-radius: 0;
+  border: 2px solid var(--hard);
+  background: var(--fondo);
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* Los minutos, en pixel y en el color "en vivo": es el marcador arcade. */
 .minutos {
-  font-size: 1.6rem;
-  font-weight: 600;
+  font-family: var(--pixel);
+  font-size: 0.95rem;
+  color: var(--acento);
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
 }
 .minutos small {
-  font-size: 0.75rem;
+  display: block;
+  font-family: var(--pixel);
+  font-size: 0.42rem;
   font-weight: 400;
   color: var(--tenue);
-  margin-left: 0.2rem;
+  margin-top: 0.35rem;
 }
 
 .detalle {
   display: flex;
   flex-direction: column;
+  gap: 0.2rem;
   font-size: 0.8rem;
   line-height: 1.35;
+  min-width: 0;
 }
 
-/* La hora de llegada estimada: es el dato, no el comentario, así que pesa más
-   que la nota que lleva debajo. Por debajo de los minutos, que siguen siendo
-   lo primero que se mira. */
 .hora {
-  font-size: 1rem;
-  font-weight: 600;
+  font-family: var(--pixel);
+  font-size: 0.6rem;
   font-variant-numeric: tabular-nums;
 }
-.nota { color: var(--tenue); }
+.nota { color: var(--tenue); font-family: var(--mono); }
 
 /* Una parada saltada no es una llegada. Que no se pueda confundir. */
 .llegada.saltada {
   background: var(--malo-fondo);
+  border-color: var(--malo);
+}
+.llegada.saltada .linea {
+  color: var(--malo);
+  border-color: var(--malo);
 }
 .llegada.saltada .minutos {
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: 0.62rem;
+  line-height: 1.35;
+  white-space: normal;
   color: var(--malo);
   letter-spacing: 0.03em;
 }
+.llegada.saltada .hora { color: var(--malo); }
 .llegada.saltada .nota { color: var(--malo); }
 
+.llegada.cancelada { opacity: 0.7; }
 .llegada.cancelada .linea,
 .llegada.cancelada .minutos,
 .llegada.cancelada .hora {
   text-decoration: line-through;
-  opacity: 0.55;
+  opacity: 0.7;
 }
 .llegada.cancelada .nota {
   color: var(--malo);
@@ -318,12 +350,18 @@ button:disabled { opacity: 0.5; cursor: default; }
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
-  margin-top: 1rem;
-  font-size: 0.78rem;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+  font-family: var(--mono);
+  font-size: 0.76rem;
   color: var(--tenue);
 }
 .pie button { margin-left: auto; }
 .rancio { color: var(--malo); font-weight: 600; }
 
-.nota-alcance { margin-top: 1.5rem; font-size: 0.78rem; line-height: 1.45; }
+.nota-alcance {
+  margin-top: 1.5rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}

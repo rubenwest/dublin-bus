@@ -6,9 +6,16 @@
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="Llegadas de autobús en Dublín en tiempo real, sobre el feed GTFS-Realtime de la NTA.">
-  <meta name="theme-color" content="#101216">
+  <meta name="theme-color" content="#0e1014">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="manifest" href="manifest.webmanifest">
+  <!-- Fuentes retro: pixel para números y títulos, monoespaciada legible para
+       el texto. Progresivas: si no cargan (offline), caen a monospace del
+       sistema y la app sigue leyéndose. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
 </head>
 <body>
   <app-root></app-root>
