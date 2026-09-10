@@ -13,7 +13,7 @@ Si el proyecto se queda en "muestro los minutos", no aporta nada.
 
 ## Estado actual
 
-**Al día 2026-09-08: 338 paradas en vivo (el centro de Dublín), histórico en 3.**
+**Al día 2026-09-10: 338 paradas en vivo (el centro de Dublín), histórico en 3.**
 La web ya no lista paradas a pelo: hay buscador por nombre o línea, chips con
 las líneas de cada parada (que es lo que distingue las siete "O'Connell St") y
 favoritas en `localStorage`. Cada resultado —y la cabecera de la pantalla de
@@ -21,6 +21,22 @@ llegadas— lleva un sprite pixel-art (8-bit) que distingue bus de tranvía: bus
 el id empieza por otra cosa, Luas (magenta, con pantógrafo) si empieza por
 `8220GA`. Los sprites son SVG inline en `app.css` como data-URI, con colores
 fijos que leen en claro y oscuro.
+
+**Lo que entró el 2026-09-09/10** (desplegado, no pendiente):
+
+- **Radar "cerca de ti"**: pantalla que ordena las paradas por distancia con
+  `navigator.geolocation` (usa el `lat`/`lon` de `parada`). Era el punto 2 de la
+  siguiente iteración; hecho.
+- **Idioma ES/EN en caliente**, con banderas 8-bit. Los textos viven en
+  `web/src/app/i18n.ts` y se cambian sin recargar; la elección se guarda en
+  `localStorage`.
+- **Migas de pan** en la navegación y el tag de tipo de parada más pequeño.
+- **Feedback**: formulario que escribe en la tabla `feedback` de Supabase, con
+  enlace de WhatsApp como alternativa. Ver más abajo cómo leerlo.
+- **Analítica GoatCounter** (`https://dublin-bus.goatcounter.com`): snippet async
+  en `index.html`, sin cookies ni banner de consentimiento. Como es un script de
+  otro origen (`gc.zgo.at`), el service worker no lo cachea, así que offline
+  simplemente no cuenta.
 
 **La PWA se auto-actualiza** (`SwUpdate` en `app.ts`). Antes, tras un despliegue
 el service worker seguía sirviendo la versión vieja hasta cerrar la app del todo
@@ -372,15 +388,20 @@ permite ensanchar gratis. Necesitó un índice en `horario(trip_id)`: la PK es
 La RPC tiene el EXECUTE revocado a `anon`/`public` y concedido a `service_role`,
 igual que `ingerir()`.
 
-**2. Geolocalización.** "Cerca de mí" como pantalla inicial. Ya guardamos
-`lat`/`lon` en `parada`. Es la diferencia entre una web y algo que se usa.
-Con 1.877 paradas, la lista actual deja de servir; hace falta además buscar
-por nombre **mostrando las líneas de cada parada** (hay siete "O'Connell St")
-y favoritas en `localStorage`.
+**2. ~~Geolocalización~~ HECHO el 2026-09-09: radar "cerca de ti".** Pantalla
+que ordena las paradas por distancia con `navigator.geolocation` sobre el
+`lat`/`lon` de `parada`. El buscador por nombre **mostrando las líneas de cada
+parada** (hay siete "O'Connell St") y las favoritas en `localStorage` ya estaban
+desde el 08. Es la diferencia entre una web y algo que se usa, y ya está.
 
-**3. Pausar el refresco con la pestaña oculta** (ahora consume batería y datos
-en el bolsillo) y un estado offline honesto: hoy sin cobertura se queda en
-"Cargando" para siempre en vez de decir de cuándo son los datos.
+**3. Pausar el refresco con la pestaña oculta.** SIGUE PENDIENTE (verificado el
+2026-09-10): el temporizador de llegadas arranca en `seleccionar()` y solo para
+en `volver()`; el `visibilitychange` de `app.ts` únicamente dispara el chequeo
+de versión del SW, no toca el refresco. Así que en el bolsillo sigue consumiendo
+batería y datos. Falta además un estado offline honesto: hoy sin cobertura se
+queda en "Cargando" para siempre en vez de decir de cuándo son los datos (ya se
+guarda la hora del último refresco en la señal `actualizado`, solo falta usarla
+para eso).
 
 ## Móvil, comprobado a 375 px
 
@@ -429,6 +450,7 @@ permite "llegadas en vivo, anchas; histórico, estrecho".
 | `paso_medido` | vista: un bus concreto en una parada, con su retraso ya medido |
 | `error_prediccion` | vista: cada predicción del feed contra lo que pasó |
 | `fiabilidad` | vista: sesgo por parada, línea y franja horaria, con su `n` |
+| `feedback` | mensajes del formulario. INSERT anónimo; lectura solo `service_role` |
 
 Un paso se da por medido cuando el último tramo con delay cumple **las dos**
 condiciones: `sondeos >= 2` (el valor se repitió, no es una predicción que
@@ -442,6 +464,13 @@ RLS activo: lectura pública para `anon`, y ninguna política de escritura. Sól
 la `service_role` key escribe, porque se salta RLS por diseño. **Esa key nunca
 puede ir en el bundle de Angular.** La RPC `ingerir()` tiene el EXECUTE
 revocado a `anon`; comprobado desde fuera: devuelve `401 permission denied`.
+
+**La tabla `feedback` es la excepción a "ninguna política de escritura":** tiene
+un INSERT abierto a `anon` (para que el formulario funcione con la clave
+publicable) pero **sin política de SELECT**, así que la clave pública puede
+escribir y no leer. Para leer el feedback: panel de Supabase → Table Editor →
+`feedback`, o una consulta con la `service_role`. Con la clave pública devuelve
+vacío, es a propósito.
 
 **NUNCA añadir `net` a los esquemas expuestos** (Project Settings > API >
 Exposed schemas). `pg_net` se instala dando `EXECUTE` a `PUBLIC` sobre
