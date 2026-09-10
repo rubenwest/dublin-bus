@@ -27,15 +27,14 @@
   <!--
     Analítica de tráfico con GoatCounter: sin cookies (no hace falta banner de
     consentimiento), gratis y open source. Da visitas, país, referrer, navegador
-    y tamaño de pantalla — el "quién entra y desde dónde".
+    y tamaño de pantalla — el "quién entra y desde dónde". Panel en
+    https://dublin-bus.goatcounter.com
 
-    PARA ACTIVARLO: crea una cuenta en https://www.goatcounter.com/, elige un
-    código (p. ej. "dublin-bus") y sustituye AQUI_TU_CODIGO por ese código en la
-    línea de abajo. El panel te quedará en https://AQUI_TU_CODIGO.goatcounter.com
-    Mientras el código no exista, el script no cuenta nada (falla en silencio, no
-    rompe la web).
+    Script externo (gc.zgo.at), async para no bloquear el render. El service
+    worker no lo cachea: gc.zgo.at es otro origen y no casa con los patrones de
+    ngsw-config, así que offline simplemente no cuenta y la app sigue igual.
   -->
-  <script data-goatcounter="https://AQUI_TU_CODIGO.goatcounter.com/count"
+  <script data-goatcounter="https://dublin-bus.goatcounter.com/count"
           async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
