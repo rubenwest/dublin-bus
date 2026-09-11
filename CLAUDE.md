@@ -32,7 +32,9 @@ fijos que leen en claro y oscuro.
   `localStorage`.
 - **Migas de pan** en la navegación y el tag de tipo de parada más pequeño.
 - **Feedback**: formulario que escribe en la tabla `feedback` de Supabase, con
-  enlace de WhatsApp como alternativa. Ver más abajo cómo leerlo.
+  enlace de WhatsApp como alternativa. Cada mensaje nuevo **avisa por correo**
+  (ver más abajo); además queda en la tabla, que sigue siendo la fuente de
+  verdad. Ver más abajo cómo leerlo.
 - **Analítica GoatCounter** (`https://dublin-bus.goatcounter.com`): snippet async
   en `index.html`, sin cookies ni banner de consentimiento. Como es un script de
   otro origen (`gc.zgo.at`), el service worker no lo cachea, así que offline
@@ -471,6 +473,18 @@ publicable) pero **sin política de SELECT**, así que la clave pública puede
 escribir y no leer. Para leer el feedback: panel de Supabase → Table Editor →
 `feedback`, o una consulta con la `service_role`. Con la clave pública devuelve
 vacío, es a propósito.
+
+**Aviso por correo (Resend).** Un trigger `feedback_avisar` (`AFTER INSERT ON
+feedback`) llama a la función `avisar_feedback()`, que manda un correo a
+`rubensg90@gmail.com` con el mensaje. Mismo patrón que el cron `recolectar-nta`:
+lee la key de Vault (`resend_api_key`) y usa `net.http_post`, así que la key no
+queda escrita en la definición. Es `SECURITY DEFINER` porque el INSERT lo hace
+`anon`, que no puede leer `vault` ni `net`; la función corre como su dueño.
+Es fire-and-forget: si Resend falla, el INSERT del formulario **no** se rompe.
+Remitente `onboarding@resend.dev` (cero DNS), que solo puede enviar al propio
+correo de la cuenta Resend; para otro destinatario o dominio propio hay que
+verificar dominio en Resend. La respuesta de cada envío se ve en
+`net._http_response` (un `200` con `{"id":"..."}` es que Resend lo aceptó).
 
 **NUNCA añadir `net` a los esquemas expuestos** (Project Settings > API >
 Exposed schemas). `pg_net` se instala dando `EXECUTE` a `PUBLIC` sobre
