@@ -39,6 +39,12 @@ const REINTENTOS = 4;
 const VENTANA_MIN = [-2, 90];
 /** upsert de la caché por lotes: con cientos de paradas el body puede crecer. */
 const LOTE_CACHE = 500;
+/** Máximo de filas que PostgREST entrega por respuesta en este proyecto. */
+const LOTE_HORARIO = 1000;
+/** Trips por consulta: mantiene corta la URL del filtro `in`. */
+const LOTE_TRIPS = 100;
+/** No saturar el pool de la base al consultar los lotes. */
+const CONCURRENCIA_HORARIO = 6;
 
 const NTA_API_KEY = Deno.env.get("NTA_API_KEY");
 
@@ -158,17 +164,50 @@ Deno.serve(async (_req) => {
     //    Sustituye a paginar todo el horario estático en cada pasada.
     const indicePorTrip = new Map();
     if (vivos.length) {
-      const { data: filasHorario, error: e2 } = await supabase
-        .rpc("horario_de_trips", { trips: vivos });
-      if (e2) throw new Error(`horario_de_trips: ${e2.message}`);
-      for (const h of filasHorario ?? []) {
-        // `horario` solo tiene paradas seguidas, pero por si queda alguna fila
-        // vieja de una parada ya apagada, nos ceñimos a las que nos importan.
-        if (!enVivo.has(h.stop_id) && !historico.has(h.stop_id)) continue;
-        if (!indicePorTrip.has(h.trip_id)) indicePorTrip.set(h.trip_id, []);
-        indicePorTrip.get(h.trip_id).push({
-          stop_id: h.stop_id, seq: h.seq, prog: h.prog_segs, route: h.route_id,
-        });
+      // PostgREST corta cada respuesta a 1.000 filas. Con cientos de paradas el
+      // cruce supera ampliamente ese límite; si no paginamos, las paradas que
+      // no están en la primera página se escriben sin llegadas. Consultar la
+      // tabla en lotes pequeños evita además reenviar los ~3.000 ids a la RPC
+      // en cada página. El orden total hace estable la paginación.
+      const lotesTrips = [];
+      for (let i = 0; i < vivos.length; i += LOTE_TRIPS) {
+        lotesTrips.push(vivos.slice(i, i + LOTE_TRIPS));
+      }
+
+      const leerLote = async (trips, numero) => {
+        const resultado = [];
+        for (let desde = 0; ; desde += LOTE_HORARIO) {
+          const { data, error } = await supabase
+            .from("horario")
+            .select("stop_id, trip_id, seq, prog_segs, route_id")
+            .in("trip_id", trips)
+            .order("trip_id", { ascending: true })
+            .order("seq", { ascending: true })
+            .order("stop_id", { ascending: true })
+            .range(desde, desde + LOTE_HORARIO - 1);
+          if (error) {
+            throw new Error(`horario lote ${numero} [${desde}]: ${error.message}`);
+          }
+          resultado.push(...(data ?? []));
+          if ((data?.length ?? 0) < LOTE_HORARIO) break;
+        }
+        return resultado;
+      };
+
+      for (let i = 0; i < lotesTrips.length; i += CONCURRENCIA_HORARIO) {
+        const bloque = lotesTrips.slice(i, i + CONCURRENCIA_HORARIO);
+        const paginas = await Promise.all(
+          bloque.map((trips, j) => leerLote(trips, i + j + 1)),
+        );
+        for (const h of paginas.flat()) {
+          // `horario` solo tiene paradas seguidas, pero por si queda alguna fila
+          // vieja de una parada ya apagada, nos ceñimos a las que nos importan.
+          if (!enVivo.has(h.stop_id) && !historico.has(h.stop_id)) continue;
+          if (!indicePorTrip.has(h.trip_id)) indicePorTrip.set(h.trip_id, []);
+          indicePorTrip.get(h.trip_id).push({
+            stop_id: h.stop_id, seq: h.seq, prog: h.prog_segs, route: h.route_id,
+          });
+        }
       }
     }
 
