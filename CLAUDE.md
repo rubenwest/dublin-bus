@@ -393,16 +393,16 @@ total. Conclusión: **llegadas en vivo, anchas; histórico, estrecho.**
 *paradas → trips* y paginaba TODO el `horario` de las paradas seguidas en cada
 pasada; con cientos de paradas eso son millones de filas por minuto. Ahora
 recorre *trips en vivo → sus paradas*: se sacan del feed los ~2.300 trip_id
-vivos y se pide solo su horario en lotes paginados de 100 viajes. La paginación
-es obligatoria: PostgREST limita cada respuesta a 1.000 filas y una única
-llamada dejaba fuera miles de filas al ampliar la cobertura. El coste queda
-**acotado por el feed, no por el número total de paradas del GTFS**, que es
-justo lo que permite ensanchar gratis. Necesitó un índice en
-`horario(trip_id)`: la PK es `(stop_id, trip_id)` y no sirve para buscar solo
-por trip.
+vivos y se obtiene su horario mediante `horario_de_trips_json(text[])`, una
+función SQL que agrega el resultado en un único JSONB. Así no se pierde nada
+por el límite de 1.000 filas de PostgREST y Edge solo hace una consulta por
+pasada. El coste queda **acotado por el feed, no por el número total de
+paradas del GTFS**, que es justo lo que permite ensanchar gratis. La consulta
+usa el índice `horario(trip_id)`: la PK es `(stop_id, trip_id)` y no sirve para
+buscar solo por trip.
 
-La RPC tiene el EXECUTE revocado a `anon`/`public` y concedido a `service_role`,
-igual que `ingerir()`.
+Las RPC `horario_de_trips_json` e `ingerir` tienen el EXECUTE revocado a
+`anon`/`public` y concedido a `service_role`.
 
 **2. ~~Geolocalización~~ HECHO el 2026-09-09: radar "cerca de ti".** Pantalla
 que ordena las paradas por distancia con `navigator.geolocation` sobre el
