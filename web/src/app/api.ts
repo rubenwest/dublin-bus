@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { Observable, firstValueFrom, retry, throwError, timer } from 'rxjs';
 import { entorno } from './entorno';
 
 /** Estados que puede tener una llegada. Los tres últimos NO son un bus normal. */
@@ -129,6 +129,25 @@ export class Api {
   }
 
   /**
+   * Supabase puede responder puntualmente con un 5xx o perderse una petición
+   * móvil. Las lecturas son idempotentes, así que hacemos dos reintentos breves
+   * sin ocultar errores permanentes (permisos, consulta mal formada, etc.).
+   */
+  private leer<T>(peticion: Observable<T>): Promise<T> {
+    return firstValueFrom(
+      peticion.pipe(
+        retry({
+          count: 2,
+          delay: (error: { status?: number }, intento) =>
+            error.status && error.status >= 400 && error.status < 500
+              ? throwError(() => error)
+              : timer(300 * intento),
+        }),
+      ),
+    );
+  }
+
+  /**
    * Reconstruye los sentidos de una línea a partir del horario que ya hay en
    * Supabase. No hace falta añadir otra tabla: se agrupan las paradas por viaje,
    * se eliminan patrones repetidos y se eligen los dos recorridos principales
@@ -146,7 +165,7 @@ export class Api {
   }
 
   private async cargarSentidosLinea(linea: string): Promise<SentidoLinea[]> {
-    const rutas = await firstValueFrom(
+    const rutas = await this.leer(
       this.http.get<Array<{ id: string }>>(`${entorno.supabaseUrl}/rest/v1/ruta`, {
         headers: this.cabeceras,
         params: { select: 'id', nombre: `eq.${linea}` },
@@ -162,7 +181,7 @@ export class Api {
     const filas: FilaHorarioLinea[] = [];
     const lote = 1000;
     for (let offset = 0; ; offset += lote) {
-      const pagina = await firstValueFrom(
+      const pagina = await this.leer(
         this.http.get<FilaHorarioLinea[]>(`${entorno.supabaseUrl}/rest/v1/horario`, {
           headers: this.cabeceras,
           params: {

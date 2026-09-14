@@ -98,6 +98,9 @@
             <p class="tenue">{{ t('cargando_paradas') }}</p>
           } @else if (errorLinea()) {
             <p class="error">{{ errorLinea() }}</p>
+            <button type="button" class="chip" (click)="abrirLinea(lineaActiva()!)">
+              {{ t('reintentar') }}
+            </button>
           } @else if (sentidosConParadas().length) {
             @if (sentidosConParadas().length > 1) {
               <div class="capsula-sentidos" role="group" [attr.aria-label]="t('elige_sentido')">
