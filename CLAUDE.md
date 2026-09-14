@@ -27,6 +27,17 @@ fijos que leen en claro y oscuro.
 - **Radar "cerca de ti"**: pantalla que ordena las paradas por distancia con
   `navigator.geolocation` (usa el `lat`/`lon` de `parada`). Era el punto 2 de la
   siguiente iteración; hecho.
+- **Explorador de líneas**: tercera entrada en inicio junto a radar y buscador.
+  Reconstruye desde `ruta` + `horario` los dos sentidos representativos, pinta
+  las paradas disponibles como un recorrido vertical 8-bit y cada nodo abre
+  directamente sus tiempos. Se consulta bajo demanda y se cachea en la sesión;
+  no duplica el horario ni exige una tabla nueva.
+- **Cobertura urbana ampliada** (2026-09-14): caja
+  `lat[53.33,53.365] lon[-6.31,-6.22]`, 656 paradas dentro más las dos
+  excepciones anteriores (658 `en_vivo`). Incluye Rialto y East Wall. La web
+  carga `public/codigos-parada.json`, generado desde `stops.txt`, para buscar
+  también el `stop_code` público que enseñan Google Maps y las marquesinas
+  (`998013` encuentra los dos andenes Luas de Rialto).
 - **Idioma ES/EN en caliente**, con banderas 8-bit. Los textos viven en
   `web/src/app/i18n.ts` y se cambian sin recargar; la elección se guarda en
   `localStorage`.
@@ -357,10 +368,10 @@ Dos cosas que rompen el despliegue si se olvidan, y ya mordieron:
 
 ## Siguiente iteración, por orden de impacto
 
-**1. ~~Abrir a más paradas~~ HECHO el 2026-09-08: 338 en vivo (el centro).**
+**1. ~~Abrir a más paradas~~ HECHO: 658 en vivo (centro ampliado).**
 Se partió `recolectar` en dos banderas (`en_vivo` / `recolectar`) y se le dio la
 vuelta al bucle. El alta se hace con `sincronizar.mjs --centro`, que elige por
-caja geográfica. Queda pendiente, si algún día hace falta, subir de 338 a las
+caja geográfica. Queda pendiente, si algún día hace falta, subir de 658 a las
 1.877 del núcleo `8220DB`. Las medidas que llevaron aquí:
 
 | Llegadas en vivo (horario, coste fijo) | Paradas | Espacio |
@@ -435,7 +446,7 @@ repitió un valor) es justo lo que necesita la detección de congelados.
 siguiente iteración y ya está hecho, 2026-09-08):
 
 - `parada.en_vivo` → se muestra en la web y se le reescribe `llegada_actual`.
-  **Ancho: 338 paradas** (las 336 del centro más Rathmines y Dún Laoghaire).
+  **Ancho: 658 paradas** (656 del centro ampliado más Rathmines y Dún Laoghaire).
   Abrirlo no cuesta ni una llamada más a la NTA, el feed ya viene entero.
 - `parada.recolectar` → se guarda su histórico en `serie`. **Estrecho: sigue en
   3**, porque el histórico es lo único que llena el plan gratuito (100 paradas
@@ -447,7 +458,7 @@ permite "llegadas en vivo, anchas; histórico, estrecho".
 | Objeto | Qué es |
 |---|---|
 | `parada` | catálogo, sale del estático. `en_vivo`, `recolectar`, `lineas` |
-| `horario` | recorte de `stop_times` de las paradas `en_vivo`. 335.549 filas |
+| `horario` | recorte de `stop_times` de las paradas `en_vivo`. 854.194 filas en la caja ampliada |
 | `serie` | los tramos. Es la tabla que crece |
 | `paso_medido` | vista: un bus concreto en una parada, con su retraso ya medido |
 | `error_prediccion` | vista: cada predicción del feed contra lo que pasó |

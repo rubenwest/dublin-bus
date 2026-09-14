@@ -1,6 +1,6 @@
 import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { SwUpdate } from '@angular/service-worker';
-import { Api, Llegada, Llegadas, Parada } from './api';
+import { Api, Llegada, Llegadas, Parada, SentidoLinea } from './api';
 import { entorno } from './entorno';
 import { Idioma, traducir } from './i18n';
 
@@ -97,7 +97,15 @@ export class App implements OnDestroy {
    * Arranca en 'buscar' a propósito, para no plantar el radar en la cara nada
    * más abrir; el radar se ve al tocar su pestaña.
    */
-  readonly modo = signal<'cerca' | 'buscar'>('buscar');
+  readonly modo = signal<'cerca' | 'buscar' | 'lineas'>('buscar');
+
+  /** Línea abierta en el explorador de recorridos de la pantalla inicial. */
+  readonly lineaActiva = signal<string | null>(null);
+  readonly busquedaLinea = signal('');
+  readonly sentidos = signal<SentidoLinea[]>([]);
+  readonly sentidoActivo = signal(0);
+  readonly cargandoLinea = signal(false);
+  readonly errorLinea = signal<string | null>(null);
 
   /** Idioma de la interfaz. Se cambia en caliente desde las banderas de arriba. */
   readonly lang = signal<Idioma>(this.idiomaInicial());
@@ -186,6 +194,7 @@ export class App implements OnDestroy {
           (p) =>
             normaliza(p.nombre).includes(q) ||
             p.id.toLowerCase().includes(q) ||
+            (p.codigo?.toLowerCase().includes(q) ?? false) ||
             p.lineas.some((l) => normaliza(l).includes(q)),
         )
       : this.paradas().length <= LISTA_SIN_BUSCAR
@@ -198,6 +207,32 @@ export class App implements OnDestroy {
   readonly pisteBuscar = computed(
     () => !this.busqueda().trim() && this.paradas().length > LISTA_SIN_BUSCAR,
   );
+
+  /** Catálogo único de líneas presentes en las paradas que ya tienen tiempos. */
+  readonly lineasCatalogo = computed(() => {
+    const q = normaliza(this.busquedaLinea().trim());
+    const todas = [...new Set(this.paradas().flatMap((p) => p.lineas))].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true }),
+    );
+    return q ? todas.filter((linea) => normaliza(linea).includes(q)) : todas;
+  });
+
+  /** Los ids del recorrido se enlazan con el catálogo cargado y seleccionable. */
+  readonly sentidosConParadas = computed(() => {
+    const porId = new Map(this.paradas().map((p) => [p.id, p]));
+    return this.sentidos()
+      .map((sentido) => ({
+        ...sentido,
+        paradas: sentido.paradas.map((id) => porId.get(id)).filter((p): p is Parada => !!p),
+      }))
+      .filter((sentido) => sentido.paradas.length);
+  });
+
+  /** En móvil se enseña un sentido cada vez para que los nombres sigan leyendo bien. */
+  readonly sentidoVisible = computed(() => {
+    const sentidos = this.sentidosConParadas();
+    return sentidos[this.sentidoActivo()] ?? sentidos[0] ?? null;
+  });
 
   /**
    * Las paradas más cercanas a la ubicación, con su distancia y rumbo ya
@@ -369,6 +404,56 @@ export class App implements OnDestroy {
     localStorage.removeItem(CLAVE_ULTIMA);
   }
 
+  /** Vuelve al inicio completo, cerrando también un recorrido abierto. */
+  irInicio(): void {
+    this.volver();
+    this.cerrarLinea();
+  }
+
+  verLineas(): void {
+    this.modo.set('lineas');
+  }
+
+  verBuscar(): void {
+    this.cerrarLinea();
+    this.modo.set('buscar');
+  }
+
+  volverAListaLineas(): void {
+    this.volver();
+    this.cerrarLinea();
+  }
+
+  async abrirLinea(linea: string): Promise<void> {
+    this.lineaActiva.set(linea);
+    this.sentidoActivo.set(0);
+    this.sentidos.set([]);
+    this.errorLinea.set(null);
+    this.cargandoLinea.set(true);
+    try {
+      this.sentidos.set(await this.api.sentidosLinea(linea));
+    } catch {
+      this.errorLinea.set(this.t('err_cargar_linea'));
+    } finally {
+      this.cargandoLinea.set(false);
+    }
+  }
+
+  cerrarLinea(): void {
+    this.lineaActiva.set(null);
+    this.sentidoActivo.set(0);
+    this.sentidos.set([]);
+    this.errorLinea.set(null);
+  }
+
+  destinoSentido(sentido: { paradas: Parada[] }): string {
+    return sentido.paradas.at(-1)?.nombre ?? this.t('destino_desconocido');
+  }
+
+  codigoVisible(p: Parada): string {
+    return p.codigo ?? p.id;
+  }
+
   // --- Buscador y favoritas -------------------------------------------------
 
   buscar(texto: string): void {
@@ -406,6 +491,7 @@ export class App implements OnDestroy {
 
   /** Abre la pestaña del radar y localiza (si no lo está ya). */
   verCerca(): void {
+    this.cerrarLinea();
     this.modo.set('cerca');
     if (this.estadoGeo() !== 'ok') this.ubicar();
   }

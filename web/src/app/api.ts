@@ -24,6 +24,8 @@ export interface Llegada {
 
 export interface Parada {
   id: string;
+  /** Código corto que se ve en Google Maps y en la marquesina (p. ej. 998013). */
+  codigo: string | null;
   nombre: string;
   lat: number | null;
   lon: number | null;
@@ -40,6 +42,18 @@ export interface Llegadas {
   llegadas: Llegada[];
 }
 
+/** Un sentido representativo de una línea, limitado a las paradas disponibles. */
+export interface SentidoLinea {
+  id: string;
+  paradas: string[];
+}
+
+interface FilaHorarioLinea {
+  stop_id: string;
+  trip_id: string;
+  seq: number;
+}
+
 /**
  * Habla directamente con Supabase, sin backend propio.
  *
@@ -54,6 +68,7 @@ export interface Llegadas {
 @Injectable({ providedIn: 'root' })
 export class Api {
   private http = inject(HttpClient);
+  private recorridos = new Map<string, Promise<SentidoLinea[]>>();
 
   private get cabeceras() {
     return {
@@ -64,18 +79,22 @@ export class Api {
 
   /** Las paradas que se muestran en vivo. Pueden ser cientos: el buscador filtra. */
   async paradas(): Promise<Parada[]> {
-    const filas = await firstValueFrom(
-      this.http.get<any[]>(`${entorno.supabaseUrl}/rest/v1/parada`, {
+    const [filas, codigos] = await Promise.all([
+      firstValueFrom(this.http.get<any[]>(`${entorno.supabaseUrl}/rest/v1/parada`, {
         headers: this.cabeceras,
         params: {
           select: 'id,nombre,lat,lon,lineas',
           en_vivo: 'eq.true',
           order: 'nombre.asc',
         },
-      }),
-    );
+      })),
+      firstValueFrom(this.http.get<Record<string, string>>('codigos-parada.json')).catch(
+        () => ({}) as Record<string, string>,
+      ),
+    ]);
     return filas.map((f) => ({
       id: f.id,
+      codigo: codigos[f.id] ?? null,
       nombre: f.nombre,
       lat: f.lat,
       lon: f.lon,
@@ -98,8 +117,8 @@ export class Api {
 
     return {
       parada: f.parada
-        ? { ...f.parada, lineas: f.parada.lineas ?? [] }
-        : { id: f.stop_id, nombre: f.stop_id, lat: null, lon: null, lineas: [] },
+        ? { ...f.parada, codigo: null, lineas: f.parada.lineas ?? [] }
+        : { id: f.stop_id, codigo: null, nombre: f.stop_id, lat: null, lon: null, lineas: [] },
       generado: f.generado,
       feedTs: f.feed_ts ?? null,
       antiguedadSegundos: f.feed_ts
@@ -107,6 +126,105 @@ export class Api {
         : Math.round((Date.now() - new Date(f.generado).getTime()) / 1000),
       llegadas: (f.llegadas ?? []) as Llegada[],
     };
+  }
+
+  /**
+   * Reconstruye los sentidos de una línea a partir del horario que ya hay en
+   * Supabase. No hace falta añadir otra tabla: se agrupan las paradas por viaje,
+   * se eliminan patrones repetidos y se eligen los dos recorridos principales
+   * que avanzan en sentidos opuestos.
+   */
+  sentidosLinea(linea: string): Promise<SentidoLinea[]> {
+    const guardado = this.recorridos.get(linea);
+    if (guardado) return guardado;
+    const peticion = this.cargarSentidosLinea(linea).catch((error) => {
+      this.recorridos.delete(linea);
+      throw error;
+    });
+    this.recorridos.set(linea, peticion);
+    return peticion;
+  }
+
+  private async cargarSentidosLinea(linea: string): Promise<SentidoLinea[]> {
+    const rutas = await firstValueFrom(
+      this.http.get<Array<{ id: string }>>(`${entorno.supabaseUrl}/rest/v1/ruta`, {
+        headers: this.cabeceras,
+        params: { select: 'id', nombre: `eq.${linea}` },
+      }),
+    );
+    if (!rutas.length) return [];
+
+    // PostgREST limita cada respuesta. Se pagina porque una línea frecuente
+    // puede sumar miles de filas aunque solo cubramos el centro de Dublín.
+    const filtroRutas = `in.(${rutas
+      .map((r) => `"${r.id.replaceAll('"', '\\"')}"`)
+      .join(',')})`;
+    const filas: FilaHorarioLinea[] = [];
+    const lote = 1000;
+    for (let offset = 0; ; offset += lote) {
+      const pagina = await firstValueFrom(
+        this.http.get<FilaHorarioLinea[]>(`${entorno.supabaseUrl}/rest/v1/horario`, {
+          headers: this.cabeceras,
+          params: {
+            select: 'stop_id,trip_id,seq',
+            route_id: filtroRutas,
+            order: 'trip_id.asc,seq.asc',
+            limit: String(lote),
+            offset: String(offset),
+          },
+        }),
+      );
+      filas.push(...pagina);
+      if (pagina.length < lote) break;
+    }
+
+    const porViaje = new Map<string, FilaHorarioLinea[]>();
+    for (const fila of filas) {
+      if (!porViaje.has(fila.trip_id)) porViaje.set(fila.trip_id, []);
+      porViaje.get(fila.trip_id)!.push(fila);
+    }
+
+    const patrones = new Map<string, { paradas: string[]; veces: number }>();
+    for (const viaje of porViaje.values()) {
+      const paradas = viaje
+        .sort((a, b) => a.seq - b.seq)
+        .map((f) => f.stop_id)
+        .filter((id, i, todos) => i === 0 || id !== todos[i - 1]);
+      if (!paradas.length) continue;
+      const firma = paradas.join('|');
+      const patron = patrones.get(firma);
+      if (patron) patron.veces++;
+      else patrones.set(firma, { paradas, veces: 1 });
+    }
+
+    const candidatos = [...patrones.values()].sort(
+      (a, b) => b.paradas.length - a.paradas.length || b.veces - a.veces,
+    );
+    if (!candidatos.length) return [];
+
+    const primero = candidatos[0];
+    const posiciones = new Map(primero.paradas.map((id, i) => [id, i]));
+    // El segundo patrón debe cruzar al menos dos paradas del primero en orden
+    // inverso. Así no confundimos una variante corta con el viaje de vuelta.
+    const opuesto = candidatos.slice(1).find((candidato) => {
+      const comunes = candidato.paradas
+        .map((id) => posiciones.get(id))
+        .filter((i): i is number => i != null);
+      return comunes.length >= 2 && comunes[0] > comunes[comunes.length - 1];
+    });
+
+    // En calles de sentido único los dos viajes pueden usar paradas totalmente
+    // distintas. En ese caso no hay orden común que invertir: escogemos el
+    // patrón largo con poco solape antes que una pequeña variante del primero.
+    const pocoSolape = candidatos.slice(1).find((candidato) => {
+      const comunes = candidato.paradas.filter((id) => posiciones.has(id)).length;
+      return comunes / Math.min(primero.paradas.length, candidato.paradas.length) < 0.5;
+    });
+    const segundo = opuesto ?? pocoSolape ?? candidatos[1];
+
+    return [primero, segundo]
+      .filter((p): p is { paradas: string[]; veces: number } => p != null)
+      .map((p, i) => ({ id: `${linea}-${i + 1}`, paradas: p.paradas }));
   }
 
   /**

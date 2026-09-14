@@ -3,8 +3,9 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
+    "start": "ng serve --port 4377",
     "build": "ng build",
+    "catalogo:paradas": "node ../scripts/codigos-parada.mjs",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },

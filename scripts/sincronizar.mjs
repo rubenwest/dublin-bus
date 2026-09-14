@@ -36,11 +36,11 @@ const DIA = args.includes("--dia") ? args[args.indexOf("--dia") + 1] : null;
 const datosDir = "./datos";
 
 /**
- * Caja del centro de Dublín por defecto: de Parnell Sq bajando por O'Connell,
- * cruzando el Liffey, College Green, Dame St y hasta St Stephen's Green.
+ * Caja urbana de Dublín por defecto: amplía el centro hasta Rialto por el oeste
+ * y East Wall por el este, sin abrir todavía todo el núcleo metropolitano.
  * Ajustable con  --caja <latMin> <latMax> <lonMin> <lonMax>.
  */
-const CAJA_CENTRO = { latMin: 53.335, latMax: 53.36, lonMin: -6.29, lonMax: -6.24 };
+const CAJA_CENTRO = { latMin: 53.33, latMax: 53.365, lonMin: -6.31, lonMax: -6.22 };
 
 function leerCaja() {
   const i = args.indexOf("--caja");

@@ -34,19 +34,36 @@
      medio (Cerca de ti / Buscar parada) recuerda desde qué pantalla entraste. -->
 <nav class="migas" [attr.aria-label]="t('donde_estas')">
   @if (parada()) {
-    <button type="button" class="miga" data-test="miga-inicio" (click)="volver()">{{ t('inicio') }}</button>
+    <button type="button" class="miga" data-test="miga-inicio" (click)="irInicio()">{{ t('inicio') }}</button>
     <span class="sep" aria-hidden="true">›</span>
-    <button type="button" class="miga" data-test="miga-modo" (click)="volver()">
-      {{ modo() === 'cerca' ? t('cerca') : t('buscar') }}
+    <button type="button" class="miga" data-test="miga-modo"
+      (click)="modo() === 'lineas' ? volverAListaLineas() : volver()">
+      {{ modo() === 'cerca' ? t('cerca') : modo() === 'lineas' ? t('lineas_modo') : t('buscar') }}
     </button>
+    @if (lineaActiva()) {
+      <span class="sep" aria-hidden="true">›</span>
+      <button type="button" class="miga" data-test="miga-linea" (click)="volver()">
+        {{ t('linea_titulo', { linea: lineaActiva()! }) }}
+      </button>
+    }
     <span class="sep" aria-hidden="true">›</span>
     <span class="miga actual" aria-current="page">{{ parada()!.nombre }}</span>
   } @else {
-    <span class="miga">{{ t('inicio') }}</span>
+    @if (lineaActiva()) {
+      <button type="button" class="miga" (click)="irInicio()">{{ t('inicio') }}</button>
+    } @else {
+      <span class="miga">{{ t('inicio') }}</span>
+    }
     <span class="sep" aria-hidden="true">›</span>
-    <span class="miga actual" aria-current="page">
-      {{ modo() === 'cerca' ? t('cerca') : t('buscar') }}
-    </span>
+    @if (lineaActiva()) {
+      <button type="button" class="miga" (click)="cerrarLinea()">{{ t('lineas_modo') }}</button>
+      <span class="sep" aria-hidden="true">›</span>
+      <span class="miga actual" aria-current="page">{{ t('linea_titulo', { linea: lineaActiva()! }) }}</span>
+    } @else {
+      <span class="miga actual" aria-current="page">
+        {{ modo() === 'cerca' ? t('cerca') : modo() === 'lineas' ? t('lineas_modo') : t('buscar') }}
+      </span>
+    }
   }
 </nav>
 
@@ -60,10 +77,86 @@
       <button type="button" class="modo" data-test="modo-cerca"
         [class.activo]="modo() === 'cerca'" (click)="verCerca()">{{ t('cerca') }}</button>
       <button type="button" class="modo" data-test="modo-buscar"
-        [class.activo]="modo() === 'buscar'" (click)="modo.set('buscar')">{{ t('buscar') }}</button>
+        [class.activo]="modo() === 'buscar'" (click)="verBuscar()">{{ t('buscar') }}</button>
+      <button type="button" class="modo" data-test="modo-lineas"
+        [class.activo]="modo() === 'lineas'" (click)="verLineas()">{{ t('lineas_modo') }}</button>
     </div>
 
-    @if (modo() === 'cerca') {
+    @if (modo() === 'lineas') {
+      @if (lineaActiva()) {
+        <section class="panel-linea" data-test="panel-linea">
+          <div class="linea-cabecera">
+            <span class="linea linea-grande">{{ lineaActiva() }}</span>
+            <div>
+              <h2>{{ t('linea_titulo', { linea: lineaActiva()! }) }}</h2>
+              <p class="tenue">{{ t('linea_paradas') }}</p>
+            </div>
+          </div>
+          <p class="ayuda-linea">{{ t('toca_parada') }}</p>
+
+          @if (cargandoLinea()) {
+            <p class="tenue">{{ t('cargando_paradas') }}</p>
+          } @else if (errorLinea()) {
+            <p class="error">{{ errorLinea() }}</p>
+          } @else if (sentidosConParadas().length) {
+            @if (sentidosConParadas().length > 1) {
+              <div class="capsula-sentidos" role="group" [attr.aria-label]="t('elige_sentido')">
+                <span class="vuelta-grafica" aria-hidden="true">
+                  <span>↓</span><span>↑</span>
+                </span>
+                @for (sentido of sentidosConParadas(); track sentido.id; let i = $index) {
+                  <button type="button" class="sentido-selector"
+                    [class.activo]="sentidoActivo() === i"
+                    [attr.aria-pressed]="sentidoActivo() === i"
+                    (click)="sentidoActivo.set(i)">
+                    <span class="sentido-num">{{ t('sentido_n', { n: i + 1 }) }}</span>
+                    <span class="sentido-destino">{{ t('hacia', { destino: destinoSentido(sentido) }) }}</span>
+                  </button>
+                }
+              </div>
+              <p class="nota-capsula">{{ t('capsula_aclara') }}</p>
+            }
+
+            @if (sentidoVisible(); as sentido) {
+              <section class="sentido sentido-visible" [attr.data-test]="'sentido-' + (sentidoActivo() + 1)">
+                <h3 class="grupo titulo-sentido">
+                  {{ t('sentido_hacia', { n: sentidoActivo() + 1, destino: destinoSentido(sentido) }) }}
+                </h3>
+                <ol class="trazado">
+                  @for (p of sentido.paradas; track p.id; let primera = $first; let ultima = $last) {
+                    <li [class.primera]="primera" [class.ultima]="ultima">
+                      <span class="via" aria-hidden="true"><span class="nodo"></span></span>
+                      <button type="button" data-test="parada-linea" (click)="seleccionar(p)">
+                        <span class="sprite" [class.tram]="esTram(p)" aria-hidden="true"></span>
+                        <span class="info">
+                          <span class="nombre">{{ p.nombre }}</span>
+                          <span class="codigo">{{ t('id_parada', { id: codigoVisible(p) }) }}</span>
+                        </span>
+                        <span class="flecha" aria-hidden="true">›</span>
+                      </button>
+                    </li>
+                  }
+                </ol>
+              </section>
+            }
+          } @else {
+            <p class="tenue">{{ t('sin_recorrido') }}</p>
+          }
+        </section>
+      } @else {
+        <label for="q-linea">{{ t('elegir_linea') }}</label>
+        <input id="q-linea" type="search" inputmode="search" autocomplete="off"
+          [placeholder]="t('ph_buscar_linea')" [value]="busquedaLinea()"
+          (input)="busquedaLinea.set($any($event.target).value)" />
+        <div class="catalogo-lineas" data-test="catalogo-lineas">
+          @for (linea of lineasCatalogo(); track linea) {
+            <button type="button" class="chip linea-selector" (click)="abrirLinea(linea)">
+              {{ linea }}
+            </button>
+          }
+        </div>
+      }
+    } @else if (modo() === 'cerca') {
     <!-- Cerca de ti: el radar retro con las paradas alrededor. Se localiza al
          entrar en esta pestaña; si ya se concedió el permiso, sin volver a pedir. -->
     <div class="cerca">
@@ -189,7 +282,7 @@
                     }
                   </span>
                 }
-                <span class="codigo">{{ p.id }}</span>
+                <span class="codigo">{{ t('id_parada', { id: codigoVisible(p) }) }}</span>
               </span>
               <span
                 class="estrella activa"
@@ -220,7 +313,7 @@
                     }
                   </span>
                 }
-                <span class="codigo">{{ p.id }}</span>
+                <span class="codigo">{{ t('id_parada', { id: codigoVisible(p) }) }}</span>
               </span>
               <span
                 class="estrella"
@@ -253,7 +346,7 @@
         {{ esTram(parada()!) ? 'LUAS' : 'BUS' }}
       </span>
     </div>
-    <p class="codigo">{{ parada()!.id }}</p>
+    <p class="codigo">{{ t('id_parada', { id: codigoVisible(parada()!) }) }}</p>
 
     @if (error()) {
       <p class="error">{{ error() }}</p>

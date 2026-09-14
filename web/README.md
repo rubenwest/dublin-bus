@@ -7,10 +7,12 @@ This project was generated using [Angular CLI](https://github.com/angular/angula
 To start a local development server, run:
 
 ```bash
-ng serve
+npm start
 ```
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+Once the server is running, open your browser and navigate to `http://localhost:4377/`. This project uses its own port so it does not conflict with the default Angular port or the other local microfrontends. The application will automatically reload whenever you modify any of the source files.
+
+After replacing the static GTFS feed, regenerate the public stop-code catalogue with `npm run catalogo:paradas`. This lets users search for the short stop IDs shown by Google Maps and at the stop itself.
 
 ## Code scaffolding
 
