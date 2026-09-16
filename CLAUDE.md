@@ -51,6 +51,48 @@ fijos que leen en claro y oscuro.
   otro origen (`gc.zgo.at`), el service worker no lo cachea, así que offline
   simplemente no cuenta.
 
+**Mapa "dónde vienen"** (2026-09-16). Bajo el filtro de líneas, un botón abre
+un mapa con la parada y los autobuses de la lista que además emiten GPS. No es
+el mapa de los ~800 buses de Dublín: ochocientos puntos no contestan a ninguna
+pregunta, y tres que son los que estoy esperando contestan a la única que
+importa en la marquesina. Lo aprendido:
+
+- **Solo 6 de cada 10 llegadas tienen posición** (medido sobre tres paradas).
+  Por eso la pantalla dice "4 de 10 autobuses emiten su posición": si falta
+  media lista sin explicación, parece un fallo nuestro y es el feed.
+- **`bearing` no se puede usar:** 253 de 789 vehículos lo traían. Nada de
+  flechas de rumbo.
+- **Arranca plegado** y se recuerda en `localStorage`. Desplegado baja tiles de
+  OpenStreetMap, y eso son datos del usuario. Las posiciones solo se piden con
+  el mapa abierto, y solo las de los viajes en pantalla (≤15), no las 800.
+- **El encuadre inicial ignora los buses a más de 3 km:** uno a 25 minutos
+  puede estar en Blanchardstown, y por meterlo en la foto la parada quedaba en
+  un píxel. Y solo se encuadra cuando ya hay buses, porque las posiciones
+  llegan en una segunda petición: encuadrar antes dejaba el mapa centrado en la
+  parada con los autobuses fuera de vista.
+- **`animate: false` en `fitBounds` no es un capricho.** Leaflet escala el
+  contenedor de tiles mientras dura la transición de zoom; si algo la
+  interrumpe, se queda congelada en `scale(0.25)` y el mapa se ve como una
+  franja con el resto en gris. Costó un rato porque en el DOM todo parecía
+  correcto: los tiles estaban cargados y los marcadores en su sitio.
+- Los pines se anclan con `iconSize: [0, 0]` y se centran por CSS. Con un
+  iconSize fijo no vale: cada línea mide distinto ("1" no ocupa lo que "L25") y
+  Leaflet calcula el margen con ese número, así que los pines se iban del mapa.
+- Leaflet es la única dependencia nueva del proyecto. Un mapa sin base
+  cartográfica no es un mapa, y dibujar calles a mano no entra en "sin
+  dependencias innecesarias".
+
+**Ahorro en el móvil** (2026-09-16), que era el punto 3 pendiente:
+
+- **El refresco se para con la pestaña oculta** y se reanuda al volver, con un
+  refresco inmediato porque lo que quedó en pantalla es de cuando se guardó el
+  móvil. Antes el temporizador solo paraba en `volver()`: una pantalla abierta
+  en el bolsillo seguía pidiendo llegadas indefinidamente.
+- **Estado offline honesto.** Si el refresco falla y ya hay llegadas, no se
+  borran ni se salta a la pantalla de error: se avisa de que son de las 21:14 y
+  que no se está actualizando. Unos horarios de hace dos minutos, dichos como
+  lo que son, valen más que un "Cargando" eterno.
+
 **La banda de fiabilidad** (2026-09-16) es lo primero que enseña el histórico
 en pantalla, y con ella el proyecto deja de ser "muestro los minutos". Bajo la
 llegada aparece "suele llegar 1 min tarde de lo que dice", que sale de
@@ -433,14 +475,22 @@ que ordena las paradas por distancia con `navigator.geolocation` sobre el
 parada** (hay siete "O'Connell St") y las favoritas en `localStorage` ya estaban
 desde el 08. Es la diferencia entre una web y algo que se usa, y ya está.
 
-**3. Pausar el refresco con la pestaña oculta.** SIGUE PENDIENTE (verificado el
-2026-09-10): el temporizador de llegadas arranca en `seleccionar()` y solo para
-en `volver()`; el `visibilitychange` de `app.ts` únicamente dispara el chequeo
-de versión del SW, no toca el refresco. Así que en el bolsillo sigue consumiendo
-batería y datos. Falta además un estado offline honesto: hoy sin cobertura se
-queda en "Cargando" para siempre en vez de decir de cuándo son los datos (ya se
-guarda la hora del último refresco en la señal `actualizado`, solo falta usarla
-para eso).
+**3. ~~Pausar el refresco con la pestaña oculta~~ HECHO el 2026-09-16**, junto
+con el estado offline honesto. Ver "Ahorro en el móvil" más arriba.
+
+**4. Ensanchar `recolectar` de 3 a ~20 paradas.** Es lo que queda, y ahora es
+lo que más valor daría: la banda de fiabilidad funciona pero solo tiene datos
+en 3 de las 658 paradas en vivo. No cuesta ni una llamada más a la NTA y son
+83 MB/mes de los 500.
+
+**5. Retención de `serie`.** No hay poda ni particionado. A 20 paradas son unos
+seis meses hasta llenar el plan gratuito. Decidir si los tramos crudos viejos
+se agregan y se tiran conviene hacerlo antes, no con el disco al 90%.
+
+**6. Una pantalla propia de fiabilidad.** `fiabilidad` ya calcula
+`error_abs_min` y `p90_min` y nadie los enseña. El p90 es la pregunta de quien
+va a coger un avión: "¿cuánto es lo peor que suele pasar?". Tiene sentido
+cuando haya más paradas con histórico, o la pantalla nace vacía.
 
 ## Móvil, comprobado a 375 px
 
@@ -490,6 +540,7 @@ permite "llegadas en vivo, anchas; histórico, estrecho".
 | `error_prediccion` | vista: cada predicción del feed contra lo que pasó |
 | `paso_predicho` | vista: una fila por AUTOBÚS, no por predicción. Ver abajo |
 | `fiabilidad` | vista: sesgo por parada, línea y franja horaria, con su `n` |
+| `vehiculo` | posiciones GPS, ~800 filas reescritas cada minuto. NO crece |
 | `feedback` | mensajes del formulario. INSERT anónimo; lectura solo `service_role` |
 
 Un paso se da por medido cuando el último tramo con delay cumple **las dos**
@@ -558,6 +609,17 @@ un proxy HTTP y alcanza servicios internos. SSRF de manual.
 que no lanza el propietario **no falla, no hace nada** — se aplicó y el permiso
 seguía puesto. Si alguna vez hace falta cerrarlo de verdad, hay que ir por
 soporte de Supabase; mientras tanto, la mitigación real es no exponer `net`.
+
+**El repo puede ir por detrás de la Edge Function desplegada, y ya pasó.** El
+2026-09-16 la función viva (v12) usaba `horario_de_trips_en_ventana_json` y la
+copia del repo seguía llamando a `horario_de_trips_json`: desplegar desde el
+repo habría sido un rollback silencioso al problema del límite de filas. En la
+base hay además RPC que no están en `supabase/migrations`
+(`horario_de_trips_en_paradas_json`, las dos `horario_de_trips_en_ventana_json`).
+**Antes de desplegar la función, comparar siempre con la desplegada** y
+recuperar lo que falte; el panel de Supabase es la fuente de verdad, no el
+repo. Lo mismo vale para las vistas y las RPC: una migración aplicada desde el
+panel o el MCP no se escribe sola en el repo.
 
 `sincronizar.mjs` va aparte del recolector a propósito: el recolector tiene un
 solo trabajo, que es no perder datos. Si Supabase está caído, la recolección

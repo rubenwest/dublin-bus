@@ -375,6 +375,17 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: 3px 3px 0 var(--har
   color: var(--malo);
 }
 
+.mapa-caja {
+  margin-bottom: 0.9rem;
+}
+.mapa-caja app-mapa {
+  margin-top: 0.5rem;
+}
+.nota-mapa {
+  margin-top: 0.4rem;
+  font-size: 0.72rem;
+}
+
 .pie-banda {
   margin-top: 0.6rem;
   font-size: 0.72rem;
