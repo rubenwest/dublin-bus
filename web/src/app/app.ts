@@ -1,6 +1,6 @@
 import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { SwUpdate } from '@angular/service-worker';
-import { Api, Llegada, Llegadas, Parada, SentidoLinea } from './api';
+import { Api, Fiabilidad, Llegada, Llegadas, Parada, SentidoLinea } from './api';
 import { entorno } from './entorno';
 import { Idioma, traducir } from './i18n';
 
@@ -81,6 +81,12 @@ export class App implements OnDestroy {
   /** Ids de paradas favoritas, ancladas arriba. En localStorage. */
   readonly favoritas = signal<string[]>(this.favoritasGuardadas());
   readonly datos = signal<Llegadas | null>(null);
+
+  /**
+   * Lo que el histórico sabe de esta parada, por (línea, franja horaria).
+   * Vacío mientras no haya muestra: hoy solo se recolecta en tres paradas.
+   */
+  readonly fiabilidad = signal<Fiabilidad[]>([]);
   readonly cargando = signal(false);
   readonly error = signal<string | null>(null);
   readonly actualizado = signal<Date | null>(null);
@@ -387,6 +393,7 @@ export class App implements OnDestroy {
   seleccionar(p: Parada): void {
     this.parada.set(p);
     this.datos.set(null);
+    this.cargarFiabilidad(p.id);
     this.lineasElegidas.set(this.filtroGuardado(p.id));
     this.sinTope.set(false);
     localStorage.setItem(CLAVE_ULTIMA, p.id);
@@ -398,6 +405,7 @@ export class App implements OnDestroy {
     this.pararRefresco();
     this.parada.set(null);
     this.datos.set(null);
+    this.fiabilidad.set([]);
     this.error.set(null);
     this.lineasElegidas.set([]);
     this.sinTope.set(false);
@@ -649,6 +657,115 @@ export class App implements OnDestroy {
     if (this.temporizador) clearInterval(this.temporizador);
     this.temporizador = null;
   }
+
+  /**
+   * El histórico va aparte del refresco de llegadas y no lo bloquea: son datos
+   * de semanas, y si fallan la pantalla sigue dando los minutos de siempre.
+   */
+  private cargarFiabilidad(stopId: string): void {
+    this.fiabilidad.set([]);
+    this.api
+      .fiabilidad(stopId)
+      .then((filas) => {
+        // Puede haber cambiado de parada mientras se pedía.
+        if (this.parada()?.id === stopId) this.fiabilidad.set(filas);
+      })
+      .catch(() => this.fiabilidad.set([]));
+  }
+
+  /** Índice por línea y franja, que es como se consulta al pintar cada fila. */
+  private readonly celdas = computed(() => {
+    const m = new Map<string, Fiabilidad>();
+    for (const f of this.fiabilidad()) m.set(`${f.linea}|${f.franjaHora}`, f);
+    return m;
+  });
+
+  /**
+   * La franja es la de la hora a la que LLEGA el bus, no la actual: quien mira
+   * a las 17:58 un bus de las 18:03 quiere saber cómo va la franja de las 18.
+   */
+  private franjaDe(l: Llegada): number {
+    const iso = this.hayEstimacion(l) ? l.estimado : l.programado;
+    return Number(
+      new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/Dublin',
+        hour: 'numeric',
+        hour12: false,
+      }).format(new Date(iso)),
+    );
+  }
+
+  /**
+   * La celda aplicable a una llegada, si la hay. Una parada saltada o un viaje
+   * cancelado no llegan a ninguna hora: ahí el sesgo no significa nada.
+   */
+  celda(l: Llegada): Fiabilidad | null {
+    if (l.estado === 'SALTADA' || l.estado === 'CANCELADO') return null;
+    return this.celdas().get(`${l.linea}|${this.franjaDe(l)}`) ?? null;
+  }
+
+  /**
+   * La frase que da sentido al proyecto: no "faltan 5 minutos" —eso ya lo dice
+   * la app oficial— sino cuánto se suele equivocar ese 5.
+   *
+   * Se redondea al minuto porque es la unidad en la que se enseña todo lo
+   * demás, y por debajo de medio minuto se dice que acierta: anunciar "+0,4
+   * min tarde" es ruido disfrazado de precisión.
+   */
+  bandaFiabilidad(l: Llegada): string | null {
+    const c = this.celda(l);
+    if (!c || !this.primeraDeSuCelda(l)) return null;
+    const m = Math.round(c.sesgoMin);
+    return m === 0
+      ? this.t('fiab_acierta')
+      : m > 0
+        ? this.t('fiab_tarde', { m })
+        : this.t('fiab_pronto', { m: Math.abs(m) });
+  }
+
+  /**
+   * De qué tamaño es la muestra, al pasar el ratón. Fuera de la línea a
+   * propósito: en un móvil de 375 px "28 buses, 4 días" ocupaba un renglón
+   * entero de los cuatro que ya gastaba la frase.
+   */
+  detalleBanda(l: Llegada): string {
+    const c = this.celda(l);
+    return c ? this.t('fiab_muestra', { n: c.n, dias: c.dias }) : '';
+  }
+
+  /**
+   * La banda se dice una vez por (línea, franja), no en cada fila. Tres E2
+   * seguidos comparten celda y repetían la misma frase tres veces: la misma
+   * información, tres veces el ruido.
+   */
+  private primeraDeSuCelda(l: Llegada): boolean {
+    return this.primerasConBanda().has(l.tripId + l.programado);
+  }
+
+  private readonly primerasConBanda = computed(() => {
+    const vistas = new Set<string>();
+    const filas = new Set<string>();
+    for (const l of this.llegadasVisibles()) {
+      const c = this.celda(l);
+      if (!c) continue;
+      const clave = `${c.linea}|${c.franjaHora}`;
+      if (vistas.has(clave)) continue;
+      vistas.add(clave);
+      filas.add(l.tripId + l.programado);
+    }
+    return filas;
+  });
+
+  /** Para pintar en rojo solo lo que de verdad se desvía. */
+  bandaDesvia(l: Llegada): boolean {
+    const c = this.celda(l);
+    return !!c && Math.abs(Math.round(c.sesgoMin)) >= 2;
+  }
+
+  /** Si ninguna fila tiene banda, no se enseña la explicación al pie. */
+  readonly hayFiabilidad = computed(() =>
+    this.llegadasVisibles().some((l) => this.celda(l) !== null),
+  );
 
   // --- Presentación ---------------------------------------------------------
 

@@ -353,6 +353,34 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: 3px 3px 0 var(--har
 }
 .nota { color: var(--tenue); font-family: var(--mono); }
 
+/* La banda de fiabilidad: lo que sabe el histórico de esta parada a esta hora.
+   Va debajo de la nota y en pequeño a propósito — el dato grande sigue siendo
+   la hora de llegada; esto es el matiz, no el titular. El borde a la izquierda
+   la separa del resto sin meter otra caja. */
+.banda {
+  display: block;
+  margin-top: 0.25rem;
+  padding-left: 0.45rem;
+  border-left: 3px solid var(--acento);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--tenue);
+}
+
+/* Solo se tiñe cuando el desvío es de dos minutos o más: si todo se pinta de
+   aviso, no avisa nada. */
+.banda.desvia {
+  border-left-color: var(--malo);
+  color: var(--malo);
+}
+
+.pie-banda {
+  margin-top: 0.6rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 /* Una parada saltada no es una llegada. Que no se pueda confundir. */
 .llegada.saltada {
   background: var(--malo-fondo);
