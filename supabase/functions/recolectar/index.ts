@@ -32,11 +32,20 @@ import {
 
 const FEED_URL =
   "https://api.nationaltransport.ie/gtfsr/v2/TripUpdates?format=json";
+/**
+ * Posiciones GPS. Es una segunda llamada por pasada, y el fair usage de la NTA
+ * es real: se pide DESPUÉS de haber guardado todo lo demás y con menos
+ * reintentos, para que un 429 aquí no toque ni el histórico ni las llegadas.
+ */
+const VEHICULOS_URL =
+  "https://api.nationaltransport.ie/gtfsr/v2/Vehicles?format=json";
 
 const TIMEOUT_MS = 40_000;
 const REINTENTOS = 4;
 /** Ventana de llegadas que se guarda en la caché. */
 const VENTANA_MIN = [-2, 90];
+/** Margen de horario para no perder buses con retraso o adelanto admisible. */
+const MARGEN_HORARIO_SEGUNDOS = LIMITE_DELAY_SEGUNDOS;
 /** upsert de la caché por lotes: con cientos de paradas el body puede crecer. */
 const LOTE_CACHE = 500;
 
@@ -69,12 +78,12 @@ function detallar(err) {
  * 6 de 12 conexiones fallaban. Deno tampoco implementa AIA, así que aquí
  * podría pasar lo mismo y los reintentos no son un lujo.
  */
-async function pedirFeed() {
+async function pedirFeed(url = FEED_URL, reintentos = REINTENTOS) {
   let ultimo;
 
-  for (let intento = 1; intento <= REINTENTOS; intento++) {
+  for (let intento = 1; intento <= reintentos; intento++) {
     try {
-      const res = await fetch(FEED_URL, {
+      const res = await fetch(url, {
         headers: { "x-api-key": NTA_API_KEY, "Cache-Control": "no-cache" },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
@@ -93,7 +102,7 @@ async function pedirFeed() {
       return { feed: await res.json(), intentos: intento };
     } catch (err) {
       ultimo = err;
-      if (err?.fatal || intento === REINTENTOS) break;
+      if (err?.fatal || intento === reintentos) break;
       const espera = Math.round(1000 * 2 ** (intento - 1) * (0.5 + Math.random()));
       console.warn(`intento ${intento} falló, reintento en ${espera}ms: ${detallar(err)}`);
       await new Promise((r) => setTimeout(r, espera));
@@ -153,17 +162,34 @@ Deno.serve(async (_req) => {
     }
     const vivos = [...tuPorTrip.keys()];
 
-    // 5. El horario SOLO de esos trips. Acotado por el feed (~2.800 trips), no
-    //    por el número de paradas: por eso abrir el centro no dispara el coste.
-    //    Sustituye a paginar todo el horario estático en cada pasada.
+    // 5. El horario SOLO de esos trips Y de las paradas que servimos. Aunque
+    //    haya ~2.800 trips vivos, transferir todas sus paradas excede el límite
+    //    de cómputo de Edge. El filtro de parada se hace en PostgreSQL, antes de
+    //    formar el JSON que cruza la function.
     const indicePorTrip = new Map();
     if (vivos.length) {
-      // La función SQL agrega el resultado en un único JSONB. Así no aplica el
-      // límite de 1.000 filas de PostgREST y Edge solo hace una petición y un
-      // parseo, dentro del presupuesto de CPU del plan gratuito.
+      const stopIds = [...new Set([...enVivo, ...historico])];
+      const desde = new Date(
+        ahora.getTime() + (VENTANA_MIN[0] * 60 - MARGEN_HORARIO_SEGUNDOS) * 1000,
+      ).toISOString();
+      const hasta = new Date(
+        ahora.getTime() + (VENTANA_MIN[1] * 60 + MARGEN_HORARIO_SEGUNDOS) * 1000,
+      ).toISOString();
+      const viajes = vivos.map((trip_id) => ({
+        trip_id,
+        start_date: tuPorTrip.get(trip_id).trip.start_date,
+      }));
+      // SQL filtra también por la ventana horaria antes de agregar: evita el
+      // límite tabular de PostgREST sin traer paradas ya pasadas o lejanas.
       const { data: filasHorario, error: e2 } = await supabase
-        .rpc("horario_de_trips_json", { p_trips: vivos });
-      if (e2) throw new Error(`horario_de_trips_json: ${e2.message}`);
+        .rpc("horario_de_trips_en_ventana_json", {
+          p_trip_ids: vivos,
+          p_viajes: viajes,
+          p_stop_ids: stopIds,
+          p_desde: desde,
+          p_hasta: hasta,
+        });
+      if (e2) throw new Error(`horario_de_trips_en_ventana_json: ${e2.message}`);
       for (const h of filasHorario ?? []) {
           // `horario` solo tiene paradas seguidas, pero por si queda alguna fila
           // vieja de una parada ya apagada, nos ceñimos a las que nos importan.
@@ -267,10 +293,61 @@ Deno.serve(async (_req) => {
       if (e3) throw new Error(`llegada_actual: ${e3.message}`);
     }
 
+    // 9. Posiciones GPS, para el mapa. Va al final y en su propio try: si la
+    //    NTA responde 429 a la segunda llamada, ya está guardado lo que
+    //    importa —el histórico y las llegadas— y esta pasada no se pierde. El
+    //    mapa simplemente enseña las posiciones de hace un minuto.
+    let vehiculos = 0;
+    let errorVehiculos = null;
+    try {
+      const { feed: fv } = await pedirFeed(VEHICULOS_URL, 2);
+      const filasV = [];
+      const vistos = new Set();
+      for (const e of fv.entity ?? []) {
+        const v = e.vehicle;
+        const tripId = v?.trip?.trip_id;
+        const pos = v?.position;
+        // Sin trip_id no hay con qué casarlo: los `vehicle.id` de los dos
+        // feeds son espacios de nombres distintos y cruzarlos da falsos.
+        if (!tripId || !pos || pos.latitude == null || pos.longitude == null) continue;
+        // El feed puede traer dos entidades del mismo trip; la primera manda.
+        if (vistos.has(tripId)) continue;
+        vistos.add(tripId);
+        filasV.push({
+          trip_id: tripId,
+          route_id: v.trip.route_id ?? null,
+          lat: pos.latitude,
+          lon: pos.longitude,
+          // `bearing` es opcional y la NTA lo manda a ratos: null sin drama.
+          bearing: pos.bearing ?? null,
+          ts: Number(v.timestamp)
+            ? new Date(Number(v.timestamp) * 1000).toISOString()
+            : null,
+          visto: ahora.toISOString(),
+        });
+      }
+      for (let i = 0; i < filasV.length; i += LOTE_CACHE) {
+        const { error } = await supabase
+          .from("vehiculo")
+          .upsert(filasV.slice(i, i + LOTE_CACHE), { onConflict: "trip_id" });
+        if (error) throw new Error(`vehiculo: ${error.message}`);
+      }
+      // Un bus que deja de emitir tiene que desaparecer del mapa, no quedarse
+      // clavado en su última posición como si siguiera ahí.
+      const corte = new Date(ahora.getTime() - 10 * 60_000).toISOString();
+      await supabase.from("vehiculo").delete().lt("visto", corte);
+      vehiculos = filasV.length;
+    } catch (err) {
+      errorVehiculos = detallar(err);
+      console.warn(`vehiculos (no critico): ${errorVehiculos}`);
+    }
+
     return Response.json({
       ok: true,
       ms: Date.now() - t0,
       intentos,
+      vehiculos,
+      error_vehiculos: errorVehiculos,
       feed_ts: feedTs,
       entidades: feed.entity?.length ?? 0,
       trips_vivos: vivos.length,
@@ -288,3 +365,4 @@ Deno.serve(async (_req) => {
     );
   }
 });
+

@@ -1,6 +1,7 @@
 import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { SwUpdate } from '@angular/service-worker';
-import { Api, Fiabilidad, Llegada, Llegadas, Parada, SentidoLinea } from './api';
+import { Api, Fiabilidad, Llegada, Llegadas, Parada, SentidoLinea, Vehiculo } from './api';
+import { BusEnMapa, Mapa } from './mapa';
 import { entorno } from './entorno';
 import { Idioma, traducir } from './i18n';
 
@@ -11,6 +12,7 @@ const CLAVE_ULTIMA = 'dublin-bus.ultima-parada';
 const CLAVE_LINEAS = 'dublin-bus.lineas';
 const CLAVE_FAV = 'dublin-bus.favoritas';
 const CLAVE_IDIOMA = 'dublin-bus.idioma';
+const CLAVE_MAPA = 'dublin-bus.mapa';
 
 /**
  * Por encima de esto la lista plana no se enseña entera: hay que buscar. Con
@@ -68,6 +70,7 @@ function rumboGrados(lat1: number, lon1: number, lat2: number, lon2: number): nu
   selector: 'app-root',
   templateUrl: './app.html',
   styleUrl: './app.css',
+  imports: [Mapa],
 })
 export class App implements OnDestroy {
   private api = inject(Api);
@@ -87,8 +90,23 @@ export class App implements OnDestroy {
    * Vacío mientras no haya muestra: hoy solo se recolecta en tres paradas.
    */
   readonly fiabilidad = signal<Fiabilidad[]>([]);
+
+  /** Posiciones GPS de los buses que vienen. Se piden con cada refresco. */
+  readonly vehiculos = signal<Vehiculo[]>([]);
+  /**
+   * El mapa arranca plegado y se recuerda la elección. Desplegado descarga
+   * tiles de OpenStreetMap con cada movimiento, y eso son datos del usuario:
+   * que lo abra quien lo quiera, no todo el que consulte una parada.
+   */
+  readonly mapaAbierto = signal(this.mapaGuardado());
   readonly cargando = signal(false);
   readonly error = signal<string | null>(null);
+  /**
+   * El último refresco falló. No es lo mismo que `error`: aquí SÍ hay datos en
+   * pantalla, solo que son de antes. Sin esto, quien entra en el metro se
+   * quedaba mirando "Cargando" para siempre sin saber que lo que ve es viejo.
+   */
+  readonly sinConexion = signal(false);
   readonly actualizado = signal<Date | null>(null);
 
   /** Ubicación del usuario, si la ha compartido. Solo alimenta "cerca de ti". */
@@ -305,9 +323,12 @@ export class App implements OnDestroy {
   private temporizador: ReturnType<typeof setInterval> | null = null;
   private comprobarVersion: ReturnType<typeof setInterval> | null = null;
 
+  private readonly visibilidad = () => this.alCambiarVisibilidad();
+
   constructor() {
     void this.cargarParadas();
     this.vigilarActualizaciones();
+    document.addEventListener('visibilitychange', this.visibilidad);
     // Si ya dio permiso en una visita anterior, localizar sin volver a pedir:
     // así "cerca de ti" es de verdad la pantalla de inicio y no un botón más.
     if (this.geoConcedidoAntes()) this.ubicar();
@@ -315,6 +336,7 @@ export class App implements OnDestroy {
 
   ngOnDestroy(): void {
     this.pararRefresco();
+    document.removeEventListener('visibilitychange', this.visibilidad);
     if (this.comprobarVersion) clearInterval(this.comprobarVersion);
   }
 
@@ -393,6 +415,7 @@ export class App implements OnDestroy {
   seleccionar(p: Parada): void {
     this.parada.set(p);
     this.datos.set(null);
+    this.sinConexion.set(false);
     this.cargarFiabilidad(p.id);
     this.lineasElegidas.set(this.filtroGuardado(p.id));
     this.sinTope.set(false);
@@ -406,6 +429,8 @@ export class App implements OnDestroy {
     this.parada.set(null);
     this.datos.set(null);
     this.fiabilidad.set([]);
+    this.sinConexion.set(false);
+    this.vehiculos.set([]);
     this.error.set(null);
     this.lineasElegidas.set([]);
     this.sinTope.set(false);
@@ -640,17 +665,42 @@ export class App implements OnDestroy {
       } else {
         this.datos.set(d);
         this.actualizado.set(new Date());
+        this.sinConexion.set(false);
+        void this.cargarVehiculos();
       }
     } catch {
-      this.error.set(this.t('err_servidor'));
+      // Si ya hay llegadas en pantalla no se borran por un fallo de red: unos
+      // horarios de hace dos minutos, avisando de que lo son, valen más que una
+      // pantalla de error. Solo se corta del todo cuando no hay nada que dar.
+      if (this.datos()) this.sinConexion.set(true);
+      else this.error.set(this.t('err_servidor'));
     } finally {
       this.cargando.set(false);
     }
   }
 
+  /**
+   * El refresco solo corre con la pestaña delante. En el bolsillo, una pantalla
+   * abierta seguía pidiendo llegadas cada pocos segundos: batería y datos del
+   * usuario gastados en algo que nadie está mirando.
+   *
+   * Al volver se refresca de inmediato, porque lo que quedó en pantalla es de
+   * cuando se guardó el móvil y puede ser de hace una hora.
+   */
   private arrancarRefresco(): void {
     this.pararRefresco();
+    if (document.visibilityState === 'hidden') return;
     this.temporizador = setInterval(() => void this.refrescar(), entorno.refrescoMs);
+  }
+
+  private alCambiarVisibilidad(): void {
+    if (!this.parada()) return;
+    if (document.visibilityState === 'visible') {
+      void this.refrescar();
+      this.arrancarRefresco();
+    } else {
+      this.pararRefresco();
+    }
   }
 
   private pararRefresco(): void {
@@ -766,6 +816,80 @@ export class App implements OnDestroy {
   readonly hayFiabilidad = computed(() =>
     this.llegadasVisibles().some((l) => this.celda(l) !== null),
   );
+
+  /**
+   * Los buses que se pintan: los de la lista de arriba que además emiten
+   * posición. Medido sobre el feed real, son unos seis de cada diez; el resto
+   * no aparece en el mapa y no se puede hacer nada, Vehicles no los trae.
+   */
+  readonly busesEnMapa = computed<BusEnMapa[]>(() => {
+    const pos = new Map(this.vehiculos().map((v) => [v.tripId, v]));
+    return this.llegadasVisibles()
+      // Un viaje cancelado o una parada saltada no son un bus que venga a
+      // recogerte: pintarlos sería la misma mentira que en la lista.
+      .filter((l) => l.estado !== 'CANCELADO' && l.estado !== 'SALTADA')
+      .flatMap((l) => {
+        const v = pos.get(l.tripId);
+        return v ? [{ tripId: l.tripId, linea: l.linea, minutos: l.minutos, lat: v.lat, lon: v.lon }] : [];
+      });
+  });
+
+  /** Sin coordenadas de la parada no hay dónde centrar: no se ofrece el mapa. */
+  readonly hayMapa = computed(() => {
+    const p = this.datos()?.parada ?? this.parada();
+    return p?.lat != null && p?.lon != null;
+  });
+
+  readonly textoMapa = computed(() =>
+    this.mapaAbierto() ? this.t('ocultar_mapa') : this.t('ver_mapa'),
+  );
+
+  /**
+   * Cuántos de los que vienen salen en el mapa. Se dice en pantalla porque si
+   * no, faltar la mitad parece un fallo: es el feed, que viene así.
+   */
+  readonly notaMapa = computed(() =>
+    this.t('mapa_de_n', {
+      n: this.busesEnMapa().length,
+      total: this.llegadasVisibles().filter(
+        (l) => l.estado !== 'CANCELADO' && l.estado !== 'SALTADA',
+      ).length,
+    }),
+  );
+
+  alternarMapa(): void {
+    const abierto = !this.mapaAbierto();
+    this.mapaAbierto.set(abierto);
+    try {
+      localStorage.setItem(CLAVE_MAPA, abierto ? '1' : '0');
+    } catch {
+      /* modo privado: se vuelve a elegir la próxima vez */
+    }
+    if (abierto) void this.cargarVehiculos();
+  }
+
+  private mapaGuardado(): boolean {
+    try {
+      return localStorage.getItem(CLAVE_MAPA) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Las posiciones solo se piden con el mapa abierto: es una consulta más por
+   * refresco y no tiene sentido pagarla para no enseñarla.
+   */
+  private async cargarVehiculos(): Promise<void> {
+    if (!this.mapaAbierto()) return;
+    const trips = this.llegadasVisibles().map((l) => l.tripId);
+    try {
+      this.vehiculos.set(await this.api.vehiculos(trips));
+    } catch {
+      // El mapa se queda con las posiciones anteriores. Es un extra: que falle
+      // no puede llevarse por delante los minutos, que es lo que importa.
+    }
+  }
 
   // --- Presentación ---------------------------------------------------------
 

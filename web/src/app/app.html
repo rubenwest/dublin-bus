@@ -355,6 +355,12 @@
       <p class="error">{{ error() }}</p>
     }
 
+    @if (sinConexion()) {
+      <p class="error" data-test="sin-conexion">
+        {{ t('sin_conexion', { hora: horaActualizado() }) }}
+      </p>
+    }
+
     @if (rancio()) {
       <p class="error" data-test="rancio">
         {{ t('rancio', { n: datos()!.antiguedadSegundos }) }}
@@ -382,6 +388,23 @@
               (click)="alternarLinea(linea)">
               {{ linea }}
             </button>
+          }
+        </div>
+      }
+
+      @if (hayMapa() && llegadasVisibles().length) {
+        <div class="mapa-caja">
+          <button type="button" class="enlace" data-test="mapa-toggle" (click)="alternarMapa()">
+            {{ textoMapa() }}
+          </button>
+          @if (mapaAbierto()) {
+            <app-mapa
+              [lat]="d.parada.lat!"
+              [lon]="d.parada.lon!"
+              [nombreParada]="d.parada.nombre"
+              [buses]="busesEnMapa()"
+              [etiqueta]="notaMapa()" />
+            <p class="tenue nota-mapa">{{ notaMapa() }}</p>
           }
         </div>
       }

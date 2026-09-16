@@ -61,6 +61,22 @@ export interface Fiabilidad {
   p90Min: number;
 }
 
+/**
+ * Un autobús en el mapa. Viene del feed Vehicles, que está capado: trae la
+ * posición y poco más. No sirve para calcular llegadas —falta
+ * `current_stop_sequence`, así que no se sabe a qué parada va— pero sí para
+ * enseñar dónde está el bus que uno espera, que es la pregunta de la marquesina.
+ */
+export interface Vehiculo {
+  tripId: string;
+  lat: number;
+  lon: number;
+  /** Opcional de verdad: la NTA solo lo manda en un tercio de los vehículos. */
+  bearing: number | null;
+  /** Momento de la medida según el feed, para poder decir "hace 40 s". */
+  ts: string | null;
+}
+
 /** Por debajo de esto la celda no dice nada y es mejor callarse. */
 export const MIN_BUSES_FIABLE = 12;
 
@@ -196,6 +212,37 @@ export class Api {
       });
     this.fiabilidades.set(stopId, peticion);
     return peticion;
+  }
+
+  /**
+   * Dónde están los autobuses de estos viajes, ahora mismo.
+   *
+   * Se cruza por `trip_id` y nunca por `vehicle.id`: los dos feeds usan
+   * espacios de nombres distintos para los vehículos ("3" en uno, "7182" en el
+   * otro) y cruzarlos da emparejamientos falsos.
+   *
+   * Se piden solo los viajes que se ven en pantalla (como mucho quince), no los
+   * ochocientos de la tabla: en el móvil eso es la diferencia entre unos bytes
+   * y varios cientos de kilobytes por refresco.
+   */
+  async vehiculos(tripIds: string[]): Promise<Vehiculo[]> {
+    if (!tripIds.length) return [];
+    const filas = await this.leer(
+      this.http.get<any[]>(`${entorno.supabaseUrl}/rest/v1/vehiculo`, {
+        headers: this.cabeceras,
+        params: {
+          select: 'trip_id,lat,lon,bearing,ts',
+          trip_id: `in.(${tripIds.map((t) => `"${t}"`).join(',')})`,
+        },
+      }),
+    );
+    return filas.map((f) => ({
+      tripId: f.trip_id,
+      lat: f.lat,
+      lon: f.lon,
+      bearing: f.bearing ?? null,
+      ts: f.ts ?? null,
+    }));
   }
 
   /**
