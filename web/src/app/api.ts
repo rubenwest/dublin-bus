@@ -42,6 +42,28 @@ export interface Llegadas {
   llegadas: Llegada[];
 }
 
+/**
+ * Lo que dice el histórico de una celda (parada, línea, franja horaria).
+ *
+ * `n` son AUTOBUSES distintos, no predicciones: cada paso deja una veintena de
+ * predicciones sucesivas del mismo bus y contarlas todas prometía una
+ * confianza veinte veces mayor de la que hay.
+ */
+export interface Fiabilidad {
+  linea: string;
+  /** Hora del día en Dublín, 0-23, a la que llega el bus. */
+  franjaHora: number;
+  n: number;
+  dias: number;
+  /** Mediana del error, en minutos. Positivo = llega más tarde de lo anunciado. */
+  sesgoMin: number;
+  errorAbsMin: number;
+  p90Min: number;
+}
+
+/** Por debajo de esto la celda no dice nada y es mejor callarse. */
+export const MIN_BUSES_FIABLE = 12;
+
 /** Un sentido representativo de una línea, limitado a las paradas disponibles. */
 export interface SentidoLinea {
   id: string;
@@ -69,6 +91,7 @@ interface FilaHorarioLinea {
 export class Api {
   private http = inject(HttpClient);
   private recorridos = new Map<string, Promise<SentidoLinea[]>>();
+  private fiabilidades = new Map<string, Promise<Fiabilidad[]>>();
 
   private get cabeceras() {
     return {
@@ -126,6 +149,53 @@ export class Api {
         : Math.round((Date.now() - new Date(f.generado).getTime()) / 1000),
       llegadas: (f.llegadas ?? []) as Llegada[],
     };
+  }
+
+  /**
+   * El sesgo medido de cada (línea, franja horaria) de una parada. Es la razón
+   * de ser del proyecto: los minutos que faltan ya los da la app oficial, lo
+   * que no da nadie es cuánto se equivoca ese número.
+   *
+   * Se piden solo las celdas con muestra suficiente, y se cachea por parada:
+   * el histórico se mueve en días, no en el minuto del refresco.
+   */
+  fiabilidad(stopId: string): Promise<Fiabilidad[]> {
+    const guardado = this.fiabilidades.get(stopId);
+    if (guardado) return guardado;
+    const peticion = this.leer(
+      this.http.get<any[]>(`${entorno.supabaseUrl}/rest/v1/fiabilidad`, {
+        headers: this.cabeceras,
+        params: {
+          select: 'linea,franja_hora,n,dias,sesgo_min,error_abs_min,p90_min',
+          stop_id: `eq.${stopId}`,
+          n: `gte.${MIN_BUSES_FIABLE}`,
+        },
+      }),
+    )
+      .then((filas) =>
+        filas
+          // `linea` sale de un LEFT JOIN con `ruta`: si el estático no trae esa
+          // ruta no hay con qué casar la llegada y la fila no sirve.
+          .filter((f) => f.linea)
+          .map((f) => ({
+            linea: f.linea as string,
+            franjaHora: Number(f.franja_hora),
+            n: Number(f.n),
+            dias: Number(f.dias),
+            // PostgREST manda los `numeric` como cadena, no como número.
+            sesgoMin: Number(f.sesgo_min),
+            errorAbsMin: Number(f.error_abs_min),
+            p90Min: Number(f.p90_min),
+          })),
+      )
+      .catch((error) => {
+        // Sin histórico la pantalla sigue siendo útil: son los minutos de
+        // siempre. No se deja el fallo cacheado, para que reintente.
+        this.fiabilidades.delete(stopId);
+        throw error;
+      });
+    this.fiabilidades.set(stopId, peticion);
+    return peticion;
   }
 
   /**

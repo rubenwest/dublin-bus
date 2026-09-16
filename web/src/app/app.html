@@ -402,10 +402,23 @@
               <span class="detalle">
                 <span class="hora">{{ horaLlegada(l) }}</span>
                 <span class="nota">{{ detalle(l) }}</span>
+                @if (bandaFiabilidad(l); as banda) {
+                  <span
+                    class="banda"
+                    [class.desvia]="bandaDesvia(l)"
+                    [title]="detalleBanda(l)"
+                    data-test="banda">
+                    {{ banda }}
+                  </span>
+                }
               </span>
             </li>
           }
         </ul>
+
+        @if (hayFiabilidad()) {
+          <p class="tenue pie-banda">{{ t('fiab_pie') }}</p>
+        }
 
         @if (recortadas() > 0 || sinTope()) {
           <p class="tope">

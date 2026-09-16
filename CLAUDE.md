@@ -51,6 +51,29 @@ fijos que leen en claro y oscuro.
   otro origen (`gc.zgo.at`), el service worker no lo cachea, así que offline
   simplemente no cuenta.
 
+**La banda de fiabilidad** (2026-09-16) es lo primero que enseña el histórico
+en pantalla, y con ella el proyecto deja de ser "muestro los minutos". Bajo la
+llegada aparece "suele llegar 1 min tarde de lo que dice", que sale de
+`fiabilidad` cruzando la línea con la franja horaria **de la hora de llegada**,
+no de la actual: quien mira a las 17:58 un bus de las 18:03 pregunta por la
+franja de las 18. Decisiones que valen la pena recordar:
+
+- **Umbral de 12 autobuses** (`MIN_BUSES_FIABLE` en `api.ts`, filtrado en el
+  servidor con `n=gte.12`). Por debajo la celda no dice nada y es mejor callar.
+- **Una vez por (línea, franja)**, no en cada fila: tres E2 seguidos comparten
+  celda y repetían la frase tres veces.
+- **Se redondea al minuto** y por debajo de medio minuto se dice que acierta.
+  Anunciar "+0,4 min tarde" es ruido disfrazado de precisión.
+- Se tiñe de aviso solo a partir de 2 minutos. Si todo se pinta, no avisa nada.
+- No sale en `SALTADA` ni `CANCELADO`: no llegan a ninguna hora.
+- El tamaño de muestra ("28 buses, 4 días") va en el `title`, no en la línea:
+  a 375 px se comía un renglón de los cuatro que ya gastaba la frase.
+- Va aparte del refresco de llegadas y cacheada por parada. Si falla, la
+  pantalla sigue dando los minutos: son datos de semanas, no del minuto.
+
+Hoy solo tiene datos en las 3 paradas de `recolectar`; en las otras 655 no
+aparece nada, que es lo correcto.
+
 **La PWA se auto-actualiza** (`SwUpdate` en `app.ts`). Antes, tras un despliegue
 el service worker seguía sirviendo la versión vieja hasta cerrar la app del todo
 y abrirla dos veces —confundió: "he metido los iconos pero no los veo" era la
@@ -465,6 +488,7 @@ permite "llegadas en vivo, anchas; histórico, estrecho".
 | `serie` | los tramos. Es la tabla que crece |
 | `paso_medido` | vista: un bus concreto en una parada, con su retraso ya medido |
 | `error_prediccion` | vista: cada predicción del feed contra lo que pasó |
+| `paso_predicho` | vista: una fila por AUTOBÚS, no por predicción. Ver abajo |
 | `fiabilidad` | vista: sesgo por parada, línea y franja horaria, con su `n` |
 | `feedback` | mensajes del formulario. INSERT anónimo; lectura solo `service_role` |
 
@@ -475,6 +499,26 @@ estabilidad es casualidad y el bus aún no había llegado).
 
 La anticipación se mide desde `hasta`, no desde `desde`: "aún a 9 minutos vista
 seguía diciendo +3". Es la lectura útil, y la conservadora.
+
+**`fiabilidad.n` cuenta autobuses, no predicciones — y esto ya estuvo mal.**
+Cada paso deja ~20 predicciones sucesivas del mismo bus, correlacionadas entre
+sí. La versión anterior las contaba todas: la celda del E2 en Dun Laoghaire a
+las 10h decía `n=915` **siendo 43 autobuses**. Eso prometía una confianza 20
+veces mayor que la real, y además ponderaba cada bus por cuántas veces se le
+hubiera sondeado. El umbral de n=30 de este documento siempre habló de pasadas,
+o sea de buses: se estaba comparando contra la métrica equivocada.
+
+Arreglado el 2026-09-16 con `paso_predicho`, que colapsa a una fila por
+(parada, línea, bus, día) antes de agregar. De esa fila se toma la predicción
+**más lejana dentro de los 15 minutos previos** a la llegada: es lo que ve
+quien mira la app justo antes, y es la lectura conservadora. Las predicciones a
+una hora vista son malas y no las mira nadie; meterlas infla el sesgo —esa
+misma celda pasa de **+0,1 a +3,1 min** solo por incluirlas—. La vista expone
+además `linea` (el `ruta.nombre` corto, "E2"), porque `route_id` es el crudo
+del GTFS ("1 E2 a") y no casa con lo que enseña la web.
+
+Con 12 días de histórico sobre 3 paradas: 2.795 pasos, 106 celdas con >=12
+buses, 27 con >=20, 8 con >=30.
 
 RLS activo: lectura pública para `anon`, y ninguna política de escritura. Sólo
 la `service_role` key escribe, porque se salta RLS por diseño. **Esa key nunca
