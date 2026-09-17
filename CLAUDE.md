@@ -480,10 +480,20 @@ desde el 08. Es la diferencia entre una web y algo que se usa, y ya está.
 **3. ~~Pausar el refresco con la pestaña oculta~~ HECHO el 2026-09-16**, junto
 con el estado offline honesto. Ver "Ahorro en el móvil" más arriba.
 
-**4. Cargar el núcleo `8220DB` (1.877 paradas).** El adelgazamiento ya está
-hecho y desplegado (ver "El horario va por patrones"); lo que falta es correr
-`sincronizar.mjs --nucleo` con el estático delante. Es lo que arregla la línea 14
-incompleta y las paradas que no aparecen en el buscador.
+**4. ~~Cargar el núcleo `8220DB` (1.877 paradas)~~ A MEDIAS, a propósito**
+(2026-09-17). El horario del núcleo entero está cargado —patrones, recorridos y
+viajes—, pero `en_vivo` se dejó en **719** paradas: el centro, las 90 de la
+línea 14 y Dún Laoghaire. Con las 1.968 que salían de la carga, la Edge
+Function se pasa del límite de CPU del plan gratuito. Ver "Dos techos al
+ensanchar". La línea 14, que era el motivo de todo esto, está completa.
+
+Para subir a 1.877 hay que bajar antes el coste de CPU por pasada. El candidato
+es el paso 6 del recolector: `estadoParada` se llama una vez por par (trip,
+parada) —36.076 veces por pasada— y cada llamada recorre otra vez los
+`stop_time_update` del trip. Ordenando las paradas por `seq` el barrido puede
+ser lineal en vez de O(trips × paradas), pero toca `gtfsrt.mjs`, que tiene
+pruebas y espejo byte a byte: no es un cambio para hacer con una incidencia
+encima.
 
 **5. Ensanchar `recolectar` de 3 a ~20 paradas.** Es lo que queda, y ahora es
 lo que más valor daría: la banda de fiabilidad funciona pero solo tiene datos
@@ -584,14 +594,75 @@ queda repartido entre gemelos y el desempate de sentidos elige mal.
 De 154 líneas que ofrece la web, 151 resuelven recorrido. L25, L27 y S8 no
 tienen ni un viaje dentro de la cobertura actual; se arreglará solo al ensanchar.
 
-**Lo que queda para cerrar el aviso del amigo:** cargar el núcleo. Necesita el
-ZIP del estático, así que se corre en local:
+**El aviso del amigo está cerrado** (2026-09-17): las 90 paradas de la línea 14
+están en vivo y con llegadas. Se cargó con el estático delante, en local:
 
 ```
-node scripts\indexar.mjs .\gtfs .\indice
-node scripts\sincronizar.mjs --nucleo --seco    cuenta antes de subir
-node scripts\sincronizar.mjs --nucleo
+node scriptsindexar.mjs .gtfs .indice
+node scriptssincronizar.mjs --nucleo --seco    cuenta antes de subir
+node scriptssincronizar.mjs --nucleo
 ```
+
+## Dos techos al ensanchar (2026-09-17, los dos mordieron en producción)
+
+Ensanchar de 658 a 1.968 paradas dejó la web congelada 45 minutos. No fue un
+fallo de datos: fueron dos límites distintos, uno detrás del otro, y el primero
+tapaba al segundo.
+
+**Techo 1, `statement_timeout` en la RPC del horario.** Todas las pasadas del
+cron devolvían 500 con `canceling statement due to statement timeout`. El plan
+de `horario_de_trips_en_ventana_json` resolvía `stop_id = any(p_stop_ids)` con
+un BitmapAnd sobre `patron_parada_stop`, **y ese bitmap se reconstruía una vez
+por cada trip vivo**: 2.300 iteraciones leyendo 272.868 filas cada una, 1,14 M
+de buffers, 26 s. Con 658 paradas pasaba raspando; con 1.968 no.
+
+La cura es cruzar contra `unnest(...)` en vez de usar `= any(...)`: el planner
+hace entonces un hash join y el filtro de paradas se aplica **una** vez sobre
+las 36.076 filas que salen de los trips. Medido sobre las mismas filas:
+**26.186 ms -> 172 ms**. Migración `horario_ventana_por_join`.
+
+Regla general: un `= any(array)` con miles de elementos dentro de un bucle por
+fila es una bomba de relojería que solo se ve en `explain (analyze)`, mirando
+el `loops=`. El coste no está en el número de filas del resultado.
+
+**Techo 2, `CPU Time exceeded` en la Edge Function.** Con la SQL ya rápida, las
+pasadas empezaron a morir con HTTP **546** (`WORKER_RESOURCE_LIMIT`), que no es
+un error de la función sino el runtime matándola. El trabajo por pasada crece
+con el número de pares (trip, parada), no con el de paradas, y a 1.968 se pasa
+del límite del plan gratuito. Se recortó `en_vivo` a 719 y volvió a dar 200 en
+la siguiente pasada.
+
+**Un 546 no deja traza propia en el log de la función**, así que para saber
+dónde se iba el tiempo hubo que desplegar una versión con marcas de fase por
+consola. Vale la pena saber que se puede y que es barato: el CLI ya está
+autenticado en esta máquina y tarda segundos.
+
+```
+npx --no-install supabase functions deploy recolectar --project-ref ihtyzacidpvnvcnfocen
+```
+
+**Al invocar la función a mano para depurar, el cron sigue corriendo.** Las dos
+llamadas se solapan y la NTA devuelve 429 al instante. Es el mismo fair usage
+de siempre, pero cuesta reconocerlo en medio de una incidencia porque parece un
+fallo nuevo.
+
+## La carga barre lo que no recarga
+
+`sincronizar.mjs --centro/--nucleo` termina con una limpieza por marca
+`cargado`: borra todo viaje y patrón que no venga de esa pasada. Es lo que
+mantiene la base pequeña, y es también un cepo.
+
+`--nucleo` elegía las paradas **solo por el prefijo `8220DB`**, que deja fuera
+el Luas (`8220GA`), Irish Rail (`8220IR`) y los andenes `8220B1` del centro.
+Como esas paradas seguían marcadas `en_vivo` pero su horario acababa de ser
+barrido, quedaron **91 paradas mudas, 56 de ellas del Luas** — justo las que
+más llegadas tienen.
+
+Regla: **la selección de una carga tiene que ser un superconjunto de lo que ya
+está `en_vivo`.** Ahora `--nucleo` es núcleo ∪ caja ∪ `EXCEPCIONES`, y las
+excepciones son las paradas de `recolectar` que caen fuera de la caja: dejarlas
+sin horario corta la serie histórica, que es lo único que no se puede
+reconstruir después.
 
 ## Supabase
 
@@ -607,8 +678,9 @@ repitió un valor) es justo lo que necesita la detección de congelados.
 siguiente iteración y ya está hecho, 2026-09-08):
 
 - `parada.en_vivo` → se muestra en la web y se le reescribe `llegada_actual`.
-  **Ancho: 658 paradas** (656 del centro ampliado más Rathmines y Dún Laoghaire).
-  Abrirlo no cuesta ni una llamada más a la NTA, el feed ya viene entero.
+  **Ancho: 719 paradas** (el centro ampliado, las 90 de la línea 14 y Dún
+  Laoghaire). No cuesta ni una llamada más a la NTA, el feed ya viene entero,
+  pero sí cuesta CPU de la Edge Function: ver "Dos techos al ensanchar".
 - `parada.recolectar` → se guarda su histórico en `serie`. **Estrecho: sigue en
   3**, porque el histórico es lo único que llena el plan gratuito (100 paradas
   ≈ 417 MB/mes de 500).

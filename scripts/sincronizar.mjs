@@ -44,6 +44,13 @@ const datosDir = "./datos";
  */
 const CAJA_CENTRO = { latMin: 53.33, latMax: 53.365, lonMin: -6.31, lonMax: -6.22 };
 
+/**
+ * Paradas que entran siempre, caigan o no en la caja: son las del histórico
+ * (`parada.recolectar`) que quedan fuera del centro. Si se quedaran sin horario
+ * la serie se corta, que es lo único que no se puede reconstruir después.
+ */
+const EXCEPCIONES = new Set(["8250DB002039"]);
+
 function leerCaja() {
   const i = args.indexOf("--caja");
   if (i === -1) return CAJA_CENTRO;
@@ -283,9 +290,17 @@ async function upsertLotes(tabla, onConflict, filas, timeoutMs = 60_000) {
 async function subirCentro() {
   const caja = leerCaja();
   const catalogoP = "./indice/paradas.json";
-  // `--nucleo` deja de elegir por caja y coge las 1.877 paradas de Dublin Bus.
-  // Con el horario por patrones eso cabe: la caja del centro ocupaba 144 MB y
-  // el núcleo entero se queda en decenas, no en los ~410 MB de antes.
+  // `--nucleo` añade a la caja las 1.877 paradas de Dublin Bus. Con el horario
+  // por patrones eso cabe: la caja del centro ocupaba 144 MB y el núcleo entero
+  // se queda en decenas, no en los ~410 MB de antes.
+  //
+  // AÑADE, no sustituye, y eso es a propósito: el prefijo `8220DB` deja fuera
+  // el Luas (`8220GA`), Irish Rail (`8220IR`) y los andenes `8220B1` del
+  // centro, que sí estaban en vivo. Como la carga termina barriendo todo viaje
+  // que no venga de esta pasada, elegir solo por prefijo los dejaba en vivo
+  // pero sin horario: 91 paradas mudas, 56 de ellas Luas, que es justo lo que
+  // más llegadas tiene. La selección tiene que ser un superconjunto de lo que
+  // ya estaba en vivo, o la limpieza se lleva por delante lo que no recarga.
   const prefijoNucleo = NUCLEO ? "8220DB" : null;
   for (const f of [catalogoP, "./indice/trip-ruta.json", "./indice/rutas.json"]) {
     if (!fs.existsSync(f)) {
@@ -298,18 +313,21 @@ async function subirCentro() {
   const tripRuta = JSON.parse(fs.readFileSync("./indice/trip-ruta.json", "utf8"));
   const rutas = JSON.parse(fs.readFileSync("./indice/rutas.json", "utf8"));
 
-  const dentro = prefijoNucleo
-    ? catalogo.filter((p) => p.id.startsWith(prefijoNucleo))
-    : catalogo.filter(
-        (p) =>
-          p.lat != null && p.lon != null &&
-          p.lat >= caja.latMin && p.lat <= caja.latMax &&
-          p.lon >= caja.lonMin && p.lon <= caja.lonMax,
-      );
+  const enCaja = (p) =>
+    p.lat != null && p.lon != null &&
+    p.lat >= caja.latMin && p.lat <= caja.latMax &&
+    p.lon >= caja.lonMin && p.lon <= caja.lonMax;
+
+  const dentro = catalogo.filter(
+    (p) =>
+      enCaja(p) ||
+      EXCEPCIONES.has(p.id) ||
+      (prefijoNucleo != null && p.id.startsWith(prefijoNucleo)),
+  );
 
   console.log(
     (prefijoNucleo
-      ? `Núcleo Dublin Bus (${prefijoNucleo}*)\n`
+      ? `Núcleo Dublin Bus (${prefijoNucleo}*) + caja del centro\n`
       : `Caja lat[${caja.latMin}, ${caja.latMax}] lon[${caja.lonMin}, ${caja.lonMax}]\n`) +
       `${dentro.length} paradas dentro (de ${catalogo.length} con servicio).`,
   );
