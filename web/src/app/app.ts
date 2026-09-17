@@ -36,8 +36,20 @@ const CLAVE_VISTA_LINEAS = 'dublin-bus.vista-lineas';
  *
  * Ni rojo ni verde puros: los tiene la Luas y ahí el color es parte del nombre
  * de la línea. Ver COLOR_FIJO.
+ *
+ * **Elegidos midiendo, no a ojo.** La primera versión llevaba un naranja
+ * `#e8590c` que a 27 de ΔE del rojo de la Luas era indistinguible en un trazo
+ * de 4 px: en producción, el E2 y la Red salían del mismo color. Estos seis
+ * salen de maximizar la distancia mínima en CIELAB **contando los dos fijos
+ * del Luas**, con la condición de que cada uno mantenga contraste 2,2:1 contra
+ * las dos bases —la clara y la oscura—, que es lo que descartaba el amarillo
+ * (invisible en claro) y el marrón (barro en oscuro).
+ *
+ * Y van **ordenados por lo lejos que quedan entre sí**, porque los primeros
+ * huecos son los que se usan siempre: con hasta cuatro elegidas la distancia
+ * mínima es 41,8 y con las seis, 35,7. Antes era 27,1 desde la segunda.
  */
-const PALETA_MAPA = ['#1f6feb', '#e8590c', '#9c36b5', '#0c8599', '#c2255c', '#b8860b'];
+const PALETA_MAPA = ['#0c8599', '#d97706', '#a61e8c', '#7048e8', '#e64980', '#1c7ed6'];
 
 /** Las dos líneas que ya vienen con color puesto. Dibujar la Red en naranja
  *  sería contradecir su propio nombre. */

@@ -94,6 +94,20 @@ red entera se pinta en gris y sólo lo elegido toma color. Seis huecos de color
 una limitación técnica. `Red` y `Green` llevan color fijo: dibujar la Red en
 naranja contradice su nombre.
 
+**Los seis colores están medidos, no elegidos a ojo, y la primera versión
+estuvo mal en producción.** Llevaba un naranja `#e8590c` que está a 27 de ΔE
+del rojo del Luas: en un trazo de 4 px, el E2 y la Red salían del mismo color.
+La paleta de ahora sale de maximizar la distancia mínima en CIELAB **contando
+los dos fijos del Luas**, con la condición de que cada color mantenga contraste
+2,2:1 contra las dos bases —la clara y la oscura—; esa condición es la que
+descarta lo que el optimizador proponía a pelo (amarillo `#ffd43b`, invisible
+en claro, y marrón `#6b4f1a`, barro en oscuro). Y van ordenados por lo lejos
+que quedan entre sí, porque los primeros huecos son los que se usan siempre:
+con hasta cuatro elegidas la distancia mínima es 41,8 y con las seis, 35,7.
+
+La lección repetida: **el ojo sobre una captura de 800 px no detecta un ΔE de
+27**; se vio en el móvil, en producción y con dos líneas reales encima.
+
 - **Los huecos son posiciones fijas, no una lista.** Si fuera una lista, soltar
   la primera línea le cambiaría el color a todas las demás justo cuando el
   usuario las está comparando.
