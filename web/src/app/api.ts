@@ -124,21 +124,44 @@ export class Api {
     };
   }
 
-  /** Las paradas que se muestran en vivo. Pueden ser cientos: el buscador filtra. */
+  /**
+   * Las paradas que se muestran en vivo. Son casi 2.000, así que se piden
+   * PAGINADAS: PostgREST devuelve como mucho 1.000 filas y no avisa de que ha
+   * cortado. Con 658 paradas no se notaba; al abrir el núcleo, la web se quedó
+   * enseñando "buscar entre 1000 paradas" y media línea 14 no existía para el
+   * buscador ni para el explorador, sin un solo error en consola.
+   */
   async paradas(): Promise<Parada[]> {
-    const [filas, codigos] = await Promise.all([
-      firstValueFrom(this.http.get<any[]>(`${entorno.supabaseUrl}/rest/v1/parada`, {
-        headers: this.cabeceras,
-        params: {
-          select: 'id,nombre,lat,lon,lineas',
-          en_vivo: 'eq.true',
-          order: 'nombre.asc',
-        },
-      })),
+    const PAGINA = 1000;
+    const pedirPagina = (desde: number) =>
+      firstValueFrom(
+        this.http.get<any[]>(`${entorno.supabaseUrl}/rest/v1/parada`, {
+          headers: { ...this.cabeceras, Range: `${desde}-${desde + PAGINA - 1}` },
+          params: {
+            select: 'id,nombre,lat,lon,lineas',
+            en_vivo: 'eq.true',
+            order: 'nombre.asc,id.asc',
+          },
+        }),
+      );
+
+    const [primera, codigos] = await Promise.all([
+      pedirPagina(0),
       firstValueFrom(this.http.get<Record<string, string>>('codigos-parada.json')).catch(
         () => ({}) as Record<string, string>,
       ),
     ]);
+
+    const filas = primera;
+    // El `order` incluye `id` para que la paginación sea estable: ordenar solo
+    // por nombre deja empates (hay siete "O'Connell St") y una fila podría
+    // colarse en dos páginas o en ninguna.
+    for (let desde = PAGINA; filas.length === desde; desde += PAGINA) {
+      const pagina = await pedirPagina(desde);
+      if (!pagina.length) break;
+      filas.push(...pagina);
+    }
+
     return filas.map((f) => ({
       id: f.id,
       codigo: codigos[f.id] ?? null,
