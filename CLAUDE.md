@@ -31,7 +31,8 @@ fijos que leen en claro y oscuro.
   Reconstruye desde `ruta` + `horario` los dos sentidos representativos, pinta
   las paradas disponibles como un recorrido vertical 8-bit y cada nodo abre
   directamente sus tiempos. Se consulta bajo demanda y se cachea en la sesión;
-  no duplica el horario ni exige una tabla nueva.
+  no duplica el horario ni exige una tabla nueva. Desde el 2026-09-17 tiene
+  además una vista de mapa (ver "El mapa de la red").
 - **Cobertura urbana ampliada** (2026-09-14): caja
   `lat[53.33,53.365] lon[-6.31,-6.22]`, 656 paradas dentro más las dos
   excepciones anteriores (658 `en_vivo`). Incluye Rialto y East Wall. La web
@@ -81,6 +82,98 @@ importa en la marquesina. Lo aprendido:
 - Leaflet es la única dependencia nueva del proyecto. Un mapa sin base
   cartográfica no es un mapa, y dibujar calles a mano no entra en "sin
   dependencias innecesarias".
+
+**El mapa de la red** (2026-09-17) es la segunda vista del explorador de
+líneas: la misma línea que el recorrido vertical, pero por dónde pasa de
+verdad. Debajo, un selector Lista/Mapa que se recuerda en `localStorage`.
+
+La idea que lo hace funcionar: **el color es de la selección, no de la línea.**
+154 líneas no admiten 154 colores que alguien separe de un vistazo, así que la
+red entera se pinta en gris y sólo lo elegido toma color. Seis huecos de color
+(`PALETA_MAPA`), y seis es el tope de la selección por la misma razón, no por
+una limitación técnica. `Red` y `Green` llevan color fijo: dibujar la Red en
+naranja contradice su nombre.
+
+- **Los huecos son posiciones fijas, no una lista.** Si fuera una lista, soltar
+  la primera línea le cambiaría el color a todas las demás justo cuando el
+  usuario las está comparando.
+- **El mapa es su propia leyenda:** tocar un trazo gris lo elige. Sin eso habría
+  que buscar en 164 chips la línea que ya tienes debajo del dedo. Con el
+  renderer de canvas hace falta `L.canvas({ tolerance: 8 })`; un trazo de 1,6 px
+  no se acierta con el dedo.
+- **`preferCanvas: true`.** Son 776 recorridos y ~51.000 puntos: en SVG son
+  otros tantos nodos en el DOM y el paneo en un móvil se arrastra.
+- **Geometría y colores van en dos entradas separadas** del componente. Juntas
+  —una lista de `{linea, color, trazos}`— cada toque cambiaba la identidad del
+  array entero y había que tirar las 776 polilíneas y reconstruirlas. Separadas,
+  se crean una vez y un toque sólo llama a `setStyle`.
+- **El basemap es OpenStreetMap con un filtro CSS**, no un proveedor de mapas
+  claros. El primer intento fue Positron de CARTO y salió con **"API KEY
+  REQUIRED" estampado por encima**: los mapas claros de CARTO y de Stadia piden
+  clave desde hace tiempo. El filtro va sobre `.leaflet-tile-pane`, que en
+  Leaflet es hermano del panel de trazados, así que los colores de encima no se
+  tocan; en oscuro se invierte (`grayscale` antes del `invert`, o salen parques
+  magenta).
+- **Un gris de fondo por tema, a mano.** El canvas de Leaflet no entiende
+  `var()`. Con un solo gris, el que funciona sobre la base clara sale como una
+  maraña de hilos blancos sobre la oscura. La referencia para calibrarlo no es
+  el fondo sino las autopistas del basemap: si la M50 pesa más que la red, la
+  jerarquía está del revés.
+- **El camino va en los dos sentidos.** Del mapa se entra a las paradas de una
+  línea ("Ver paradas ›") y de la cabecera de la línea se vuelve al mapa con
+  ella ya resaltada ("Ver el recorrido en el mapa"). Al principio sólo iba de
+  ida, y desde el recorrido vertical parecía que el mapa hubiera desaparecido:
+  había que salir al catálogo y elegir la línea otra vez. Con los seis huecos
+  ocupados ese enlace **pisa el último** en vez de avisar del tope; quien lo
+  pulsa ha pedido esa línea, y llegar al mapa sin ella es el desconcierto que
+  se venía a arreglar.
+- **En el móvil el mapa arranca bloqueado** y hay un botón para soltarlo. El
+  otro mapa simplemente desactiva el arrastre (`dragging: !L.Browser.mobile`)
+  porque es un mapa pequeño de una parada; aquí no poder mover el mapa lo deja
+  en la mitad de lo que es. Dos estados dichos en pantalla, que es mejor que un
+  gesto de dos dedos que hay que adivinar (y que en Leaflet exige un plugin).
+
+**Lo que NO se puede hacer, y conviene no volver a intentarlo:** reproducir un
+esquema tipo metro como el "Dublin Frequent Transport Network". Ese diagrama
+está dibujado a mano, con copyright, y es de 2013 —anterior a BusConnects, así
+que no tiene ni las E ni las L ni las S—. Un esquema con ángulos de 45° y
+distancias falseadas son decisiones humanas, una por línea; de GTFS no sale.
+
+### De dónde sale la geometría
+
+`scripts/trazados.mjs` genera `web/public/trazados-linea.json` desde
+`shapes.txt`. **Hay que relanzarlo con cada estático nuevo**, como `indexar.mjs`
+y `codigos-parada.mjs`. La reducción es lo que hace esto viable:
+
+| | |
+|---|---|
+| `shapes.txt` | 188 MB, 4.030.455 filas |
+| Variantes de recorrido | 3.300 |
+| Un recorrido por línea y sentido | 776 |
+| Simplificado a 10 m y recortado a Dublín | 50.905 puntos, **0,96 MB** |
+| Servido (gzip de Pages) | **195 KB** |
+
+Tres recortes y los tres tienen truco:
+
+- **El shape con más viajes no vale a secas.** El sentido 1 de la Luas Red
+  tiene 278 viajes en una lanzadera de 14 puntos, y salía un muñón en vez de la
+  línea. Ahora se exige primero que el recorrido mida el 70% del más largo de
+  ese sentido y entre los que pasan el corte gana el de más viajes.
+- **Están las siete agencias, no sólo Dublin Bus.** Filtrando por agencia
+  quedaban **26 líneas del catálogo con el chip apagado**: los Bus Éireann que
+  salen del aeropuerto (100X, 109, 115, 32…) y todo Irish Rail (DART, Commuter,
+  InterCity). Se incluyen todas y se descarta lo que no entra en la caja de
+  Dublín, que es la mayor parte de Bus Éireann (Cork, Galway, Waterford).
+- **Y lo que entra se recorta a la caja.** El 32 va del aeropuerto a
+  Letterkenny: sin recortar son 1,36 MB en vez de 0,96 y, peor, elegirlo
+  encuadra media Irlanda y deja Dublín en un punto.
+
+Se pide **la primera vez que alguien abre el mapa**, no al arrancar: el que
+entra a mirar los minutos de su parada no paga 800 KB. En `ngsw-config.json` va
+en el grupo `assets` (`lazy`), por lo mismo.
+
+Nota: el fichero trae 216 líneas y el catálogo son 164. Las de más son paradas
+que aún no están `en_vivo`; cuando se ensanche la cobertura ya estarán.
 
 **Ahorro en el móvil** (2026-09-16), que era el punto 3 pendiente:
 
@@ -861,6 +954,7 @@ iniciar.cmd api        solo la API (si el recolector ya corre)
 node scripts\llegadas.mjs <parada> .\gtfs      consulta suelta por consola
 node scripts\congelados.mjs .\datos            análisis del histórico (local)
 node scripts\indexar.mjs .\gtfs .\indice       tras bajar estático nuevo
+node scripts\trazados.mjs                      trazado de las líneas para el mapa
 node scripts\sincronizar.mjs --centro --seco   cuenta las paradas del centro
 node scripts\sincronizar.mjs --centro          da de alta el centro (en_vivo)
 node scripts\sincronizar.mjs --nucleo --seco   cuenta las 1.877 del nucleo 8220DB

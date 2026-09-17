@@ -491,6 +491,115 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: 3px 3px 0 var(--har
   background: var(--fondo2);
 }
 
+/* --- Mapa de la red ------------------------------------------------------ */
+
+/* Lista / Mapa: el mismo control de dos posiciones que el selector de sentido,
+   sin la cápsula redonda, que aquí no viene de ningún esquema tradicional. */
+.vistas-linea {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0.25rem 0 1.1rem;
+  border: 3px solid var(--hard);
+  box-shadow: 4px 4px 0 var(--hard);
+  background: var(--fondo);
+  overflow: hidden;
+}
+.vista {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 0.6rem 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.vista:first-child { border-right: 2px solid var(--borde); }
+.vista.activo { background: var(--acento); color: var(--acento-texto); }
+.vista:active:not(:disabled) { transform: none; box-shadow: none; }
+
+/* El enlace al mapa va dentro de la cabecera de la línea, pegado al subtítulo:
+   es una salida lateral, no la acción principal de la pantalla. */
+.linea-cabecera .enlace {
+  /* `.enlace` trae `min-height: 0` porque nació para un "ver todas" metido en
+     una frase. Este se toca para navegar, así que se le da alto con padding
+     hasta una zona cómoda; los 44 px enteros abrirían un hueco que no pega en
+     una cabecera. El padding izquierdo se anula para que alinee con el título. */
+  margin-top: -0.15rem;
+  padding: 0.6rem 0.6rem 0.6rem 0;
+  font-size: 0.82rem;
+}
+
+.red { margin-top: 1rem; }
+.red app-mapa-lineas { display: block; }
+
+/* Las elegidas, con su color delante: es la leyenda de verdad, la que dice qué
+   color es qué línea. Los chips de abajo son el mando; esto es la lectura. */
+.elegidas-mapa {
+  list-style: none;
+  margin: 0.8rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.elegidas-mapa li {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.3rem 0.45rem;
+  border: 2px solid var(--borde);
+  background: var(--fondo2);
+}
+.elegidas-mapa .muestra {
+  flex: none;
+  width: 1.1rem;
+  height: 0.5rem;
+  border: 2px solid var(--hard);
+}
+.elegidas-mapa .nombre {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+/* 44 px de zona táctil aunque el aspa sea pequeña. */
+.elegidas-mapa .quitar {
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  box-shadow: none;
+  background: none;
+  color: var(--tenue);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.elegidas-mapa .quitar:active:not(:disabled) { transform: none; box-shadow: none; }
+
+/* El chip elegido se pinta de SU color, el mismo que tiene en el mapa: sin eso
+   hay que ir y volver entre la leyenda y el trazo para saber cuál es cuál. */
+.linea-selector.elegida {
+  border-color: var(--hard);
+  background: var(--color-linea);
+  color: #fff;
+}
+/* Sin trazado no hay nada que resaltar: el chip se queda, apagado, para que se
+   vea que la línea existe y que lo que falta es el dibujo. */
+.linea-selector.sin-trazado {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.aviso {
+  margin: 0.7rem 0 0;
+  padding: 0.5rem 0.6rem;
+  border: 2px solid var(--malo);
+  background: var(--malo-fondo);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
 .panel-linea { margin-top: 0.25rem; }
 
 .linea-cabecera {

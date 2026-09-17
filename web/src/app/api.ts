@@ -80,6 +80,14 @@ export interface Vehiculo {
 /** Por debajo de esto la celda no dice nada y es mejor callarse. */
 export const MIN_BUSES_FIABLE = 12;
 
+/**
+ * La geometría de las líneas, tal cual sale de `trazados-linea.json`: por cada
+ * nombre de línea, uno o dos trazados de puntos [lat, lon] —normalmente ida y
+ * vuelta—. El orden es el de Leaflet, no el de GeoJSON, para no darle la
+ * vuelta a 41.000 puntos en el navegador.
+ */
+export type TrazadosLinea = Record<string, [number, number][][]>;
+
 /** Un sentido representativo de una línea, limitado a las paradas disponibles. */
 export interface SentidoLinea {
   id: string;
@@ -116,6 +124,7 @@ export class Api {
   private http = inject(HttpClient);
   private recorridos = new Map<string, Promise<SentidoLinea[]>>();
   private fiabilidades = new Map<string, Promise<Fiabilidad[]>>();
+  private trazadosLinea: Promise<TrazadosLinea> | null = null;
 
   private get cabeceras() {
     return {
@@ -293,6 +302,33 @@ export class Api {
         }),
       ),
     );
+  }
+
+  /**
+   * La geometría de las líneas para el mapa de la red: por cada línea, uno o
+   * dos trazados de puntos [lat, lon].
+   *
+   * Es un fichero estático generado desde `shapes.txt` del GTFS
+   * (`scripts/trazados.mjs`), no una consulta a Supabase: son 800 KB que no
+   * cambian hasta la siguiente descarga del estático, y meterlos en la base
+   * costaría espacio del plan gratuito para servir siempre lo mismo.
+   *
+   * Se pide la primera vez que alguien abre el mapa y no antes. Sin esto, todo
+   * el que consulta una parada se descargaría 800 KB que quizá no mire nunca,
+   * y en el móvil eso son datos de alguien.
+   */
+  trazados(): Promise<TrazadosLinea> {
+    if (!this.trazadosLinea) {
+      this.trazadosLinea = firstValueFrom(
+        this.http.get<TrazadosLinea>('trazados-linea.json'),
+      ).catch((error) => {
+        // Sin caché del fallo: si se cayó la red, el siguiente intento vuelve
+        // a pedirlo en vez de dejar el mapa muerto para siempre.
+        this.trazadosLinea = null;
+        throw error;
+      });
+    }
+    return this.trazadosLinea;
   }
 
   /**

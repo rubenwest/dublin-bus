@@ -90,6 +90,10 @@
             <div>
               <h2>{{ t('linea_titulo', { linea: lineaActiva()! }) }}</h2>
               <p class="tenue">{{ t('linea_paradas') }}</p>
+              <button type="button" class="enlace" data-test="ver-en-mapa"
+                (click)="verEnMapa(lineaActiva()!)">
+                {{ t('ver_en_mapa') }}
+              </button>
             </div>
           </div>
           <p class="ayuda-linea">{{ t('toca_parada') }}</p>
@@ -147,17 +151,98 @@
           }
         </section>
       } @else {
-        <label for="q-linea">{{ t('elegir_linea') }}</label>
+        <!-- Dos maneras de mirar lo mismo: la lista de siempre, que lleva al
+             recorrido de una línea, y el mapa de la red, que sirve para
+             comparar varias a la vez. -->
+        <div class="vistas-linea" role="group" [attr.aria-label]="t('vista_lineas')">
+          <button type="button" class="vista" data-test="vista-lista"
+            [class.activo]="vistaLineas() === 'lista'"
+            [attr.aria-pressed]="vistaLineas() === 'lista'"
+            (click)="verVistaLineas('lista')">{{ t('vista_lista') }}</button>
+          <button type="button" class="vista" data-test="vista-mapa"
+            [class.activo]="vistaLineas() === 'mapa'"
+            [attr.aria-pressed]="vistaLineas() === 'mapa'"
+            (click)="verVistaLineas('mapa')">{{ t('vista_mapa') }}</button>
+        </div>
+
+        <label for="q-linea">{{ vistaLineas() === 'mapa' ? t('resaltar_linea') : t('elegir_linea') }}</label>
         <input id="q-linea" type="search" inputmode="search" autocomplete="off"
           [placeholder]="t('ph_buscar_linea')" [value]="busquedaLinea()"
           (input)="busquedaLinea.set($any($event.target).value)" />
-        <div class="catalogo-lineas" data-test="catalogo-lineas">
-          @for (linea of lineasCatalogo(); track linea) {
-            <button type="button" class="chip linea-selector" (click)="abrirLinea(linea)">
-              {{ linea }}
-            </button>
-          }
-        </div>
+
+        @if (vistaLineas() === 'mapa') {
+          <section class="red" data-test="mapa-red">
+            @if (cargandoRed()) {
+              <p class="tenue">{{ t('cargando_red') }}</p>
+            } @else if (errorRed()) {
+              <p class="error">{{ errorRed() }}</p>
+              <button type="button" class="chip" (click)="verVistaLineas('mapa')">
+                {{ t('reintentar') }}
+              </button>
+            } @else if (trazados()) {
+              <app-mapa-lineas
+                [trazados]="trazadosMapa()"
+                [colores]="coloresMapa()"
+                [etiqueta]="t('red_alt')"
+                [etiquetaMover]="t('mover_mapa')"
+                [etiquetaBloquear]="t('bloquear_mapa')"
+                (alternar)="alternarLineaMapa($event)" />
+              <p class="tenue nota-mapa">{{ t('red_ayuda') }}</p>
+
+              @if (lineasMapa().length) {
+                <ul class="elegidas-mapa" data-test="elegidas-mapa">
+                  @for (linea of lineasMapa(); track linea) {
+                    <li>
+                      <span class="muestra" aria-hidden="true"
+                        [style.background]="colorDeLinea(linea)"></span>
+                      <span class="nombre">{{ linea }}</span>
+                      <button type="button" class="enlace" (click)="abrirLinea(linea)">
+                        {{ t('ver_paradas') }}
+                      </button>
+                      <button type="button" class="quitar"
+                        [attr.aria-label]="t('quitar_linea', { linea })"
+                        (click)="alternarLineaMapa(linea)">×</button>
+                    </li>
+                  }
+                </ul>
+                <button type="button" class="enlace" (click)="limpiarMapa()">
+                  {{ t('limpiar_mapa') }}
+                </button>
+              }
+
+              @if (topeMapa()) {
+                <p class="aviso" role="status">{{ t('tope_mapa', { n: lineasMapa().length }) }}</p>
+              }
+
+              <div class="catalogo-lineas" data-test="leyenda-lineas">
+                @for (linea of leyendaMapa(); track linea) {
+                  <button type="button" class="chip linea-selector"
+                    [class.elegida]="colorDeLinea(linea)"
+                    [class.sin-trazado]="!hayTrazado(linea)"
+                    [disabled]="!hayTrazado(linea)"
+                    [attr.aria-pressed]="!!colorDeLinea(linea)"
+                    [attr.title]="hayTrazado(linea) ? null : t('sin_trazado')"
+                    [style.--color-linea]="colorDeLinea(linea)"
+                    (click)="alternarLineaMapa(linea)">
+                    {{ linea }}
+                  </button>
+                }
+              </div>
+
+              @if (lineasSinTrazado()) {
+                <p class="tenue">{{ t('sin_trazado_n', { n: lineasSinTrazado() }) }}</p>
+              }
+            }
+          </section>
+        } @else {
+          <div class="catalogo-lineas" data-test="catalogo-lineas">
+            @for (linea of lineasCatalogo(); track linea) {
+              <button type="button" class="chip linea-selector" (click)="abrirLinea(linea)">
+                {{ linea }}
+              </button>
+            }
+          </div>
+        }
       }
     } @else if (modo() === 'cerca') {
     <!-- Cerca de ti: el radar retro con las paradas alrededor. Se localiza al
