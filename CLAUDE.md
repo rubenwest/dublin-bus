@@ -480,20 +480,15 @@ desde el 08. Es la diferencia entre una web y algo que se usa, y ya está.
 **3. ~~Pausar el refresco con la pestaña oculta~~ HECHO el 2026-09-16**, junto
 con el estado offline honesto. Ver "Ahorro en el móvil" más arriba.
 
-**4. ~~Cargar el núcleo `8220DB` (1.877 paradas)~~ A MEDIAS, a propósito**
-(2026-09-17). El horario del núcleo entero está cargado —patrones, recorridos y
-viajes—, pero `en_vivo` se dejó en **719** paradas: el centro, las 90 de la
-línea 14 y Dún Laoghaire. Con las 1.968 que salían de la carga, la Edge
-Function se pasa del límite de CPU del plan gratuito. Ver "Dos techos al
-ensanchar". La línea 14, que era el motivo de todo esto, está completa.
+**4. ~~Cargar el núcleo `8220DB` (1.877 paradas)~~ HECHO** (2026-09-17).
+**1.968 paradas en vivo**: las 1.877 del núcleo, el Luas, Irish Rail, los
+andenes del centro y Dún Laoghaire. La línea 14 completa, que era el motivo.
 
-Para subir a 1.877 hay que bajar antes el coste de CPU por pasada. El candidato
-es el paso 6 del recolector: `estadoParada` se llama una vez por par (trip,
-parada) —36.076 veces por pasada— y cada llamada recorre otra vez los
-`stop_time_update` del trip. Ordenando las paradas por `seq` el barrido puede
-ser lineal en vez de O(trips × paradas), pero toca `gtfsrt.mjs`, que tiene
-pruebas y espejo byte a byte: no es un cambio para hacer con una incidencia
-encima.
+Costó tres arreglos, y ninguno era el que parecía: el `= any(array)` de la
+RPC del horario, el `Intl` sin cachear de `momentoProgramado` y el `select`
+de PostgREST cortando en 1.000 filas sin decirlo. Los tres están contados más
+arriba, en "Dos techos al ensanchar", "Lo que de verdad cuesta CPU en la Edge
+Function" y "PostgREST corta en 1.000 filas y no lo dice".
 
 **5. Ensanchar `recolectar` de 3 a ~20 paradas.** Es lo que queda, y ahora es
 lo que más valor daría: la banda de fiabilidad funciona pero solo tiene datos
@@ -646,6 +641,78 @@ llamadas se solapan y la NTA devuelve 429 al instante. Es el mismo fair usage
 de siempre, pero cuesta reconocerlo en medio de una incidencia porque parece un
 fallo nuevo.
 
+## Lo que de verdad cuesta CPU en la Edge Function
+
+Cuando el techo de CPU volvió a saltar, la sospecha era `estadoParada`: se
+llama una vez por par (trip, parada) —36.076 veces por pasada— y en cada
+llamada hacía `map` + `filter` + `sort` de los mismos ~40 updates. Parecía
+evidente. **Era falso**, y sólo se vio desplegando una versión con marcas de
+fase por consola:
+
+```
+[fase] 1-2 paradas y rutas: 0 ms
+[fase] 3-4 feed y trips (3150 vivos, 3177 entidades): 4540 ms   <- red, no CPU
+[fase] 5 horario (1495 trips con horario): 530 ms
+[fase] 6 cruce: 1935 ms                                          <- aqui muere
+```
+
+Medido aparte, con 36.000 llamadas que es lo que hace una pasada:
+
+| | Coste |
+|---|---|
+| `estadoParada`, ordenando en cada llamada | 15 ms |
+| `momentoProgramado` | **2.296 ms**, de los cuales **2.286 son `Intl`** |
+
+`Intl.DateTimeFormat` es 150 veces más caro que toda la sospecha original.
+`offsetDublinEnMinutos` construía uno **nuevo en cada llamada** y le pedía
+`formatToParts`: 64 us cada vez. Es el clásico coste escondido detrás de una
+API que parece barata porque cabe en tres líneas.
+
+Las dos curas, las dos en `gtfsrt.mjs`:
+
+- El formateador se construye **una vez** a nivel de módulo.
+- El desfase horario se cachea **por día de servicio**, que es exacto porque el
+  offset se mide a mediodía y por tanto depende sólo del día. La prueba 7
+  compara los dos caminos en los siete días que importan, incluidos los dos del
+  cambio de hora, y con segundos de más de 86400 (GTFS admite "25:10:00").
+- Y de paso `prepararUpdates` / `estadoParadaPreparado`: los updates de un trip
+  se ordenan una vez y se consultan con búsqueda binaria. Son 15 ms de 2.300,
+  así que **no** era el problema, pero el cambio es gratis y la prueba del
+  snapshot verifica que da exactamente lo mismo en las 55.352 combinaciones.
+
+Resultado en producción, sobre la misma fase y la misma carga:
+
+| fase 6 (cruce) | antes | después |
+|---|---|---|
+| con 719 paradas | 1.837 ms | **45 ms** |
+
+**La lección que vale para la próxima:** en un entorno con límite de CPU, medir
+antes de optimizar no es una recomendación de estilo. La optimización "obvia"
+habría dado un 6,4x sobre el 0,7% del tiempo.
+
+## PostgREST corta en 1.000 filas y no lo dice
+
+Al subir `en_vivo` a 1.968 la function siguió devolviendo **200**, y el log de
+fase cantó `cache (1000 filas)`. El paso 1 leía las paradas así:
+
+```js
+.from("parada").select("id, en_vivo, recolectar").or("en_vivo.eq.true,recolectar.eq.true")
+```
+
+Sin `range`, PostgREST devuelve como mucho 1.000 filas. No es un error, no hay
+aviso, y la pasada termina con éxito: simplemente refrescaba 1.000 paradas y
+dejaba las otras 968 con datos viejos **sin que nada fallara**. Es peor que una
+caída, porque una caída se ve.
+
+Ya había mordido antes con el horario, y por eso existe
+`horario_de_trips_en_ventana_json`: agregar en SQL para que vuelva una sola
+fila. Ahora el paso 1 pagina con `.range(desde, desde + 999)` y para cuando una
+página vuelve incompleta.
+
+Regla: **cualquier `select` de PostgREST que pueda pasar de 1.000 filas o
+pagina o agrega.** Y si de verdad quieres saber si te está cortando, cuenta lo
+que recibes y compáralo con lo que esperabas; el código no se va a quejar.
+
 ## La carga barre lo que no recarga
 
 `sincronizar.mjs --centro/--nucleo` termina con una limpieza por marca
@@ -678,9 +745,9 @@ repitió un valor) es justo lo que necesita la detección de congelados.
 siguiente iteración y ya está hecho, 2026-09-08):
 
 - `parada.en_vivo` → se muestra en la web y se le reescribe `llegada_actual`.
-  **Ancho: 719 paradas** (el centro ampliado, las 90 de la línea 14 y Dún
-  Laoghaire). No cuesta ni una llamada más a la NTA, el feed ya viene entero,
-  pero sí cuesta CPU de la Edge Function: ver "Dos techos al ensanchar".
+  **Ancho: 1.968 paradas** (las 1.877 del núcleo `8220DB`, el Luas, Irish
+  Rail, los andenes del centro y Dún Laoghaire). No cuesta ni una llamada más
+  a la NTA, el feed ya viene entero.
 - `parada.recolectar` → se guarda su histórico en `serie`. **Estrecho: sigue en
   3**, porque el histórico es lo único que llena el plan gratuito (100 paradas
   ≈ 417 MB/mes de 500).

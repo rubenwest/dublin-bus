@@ -19,7 +19,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { cargarDotEnv } from "./entorno.mjs";
 import { tomarLock } from "./lock.mjs";
-import { estadoParada } from "./gtfsrt.mjs";
+import { estadoParadaPreparado, prepararUpdates } from "./gtfsrt.mjs";
 
 // Se rellena al arrancar, justo antes de indexar. Declarado aquí arriba para
 // que el handler de "exit" pueda soltarlo aunque salgamos antes de tomarlo.
@@ -307,11 +307,14 @@ async function sondear() {
     // DELETED: el operador quiere que desaparezca. Ni se guarda.
     if (tripRel === "DELETED") continue;
 
+    // Una sola ordenación de los updates por trip, como en la Edge Function.
+    const ups = prepararUpdates(tu.stop_time_update);
+
     for (const [stopId, m] of indice) {
       const est = m.get(tripId);
       if (!est) continue;
 
-      const s = estadoParada(tu.stop_time_update, est.seq);
+      const s = estadoParadaPreparado(ups, est.seq);
 
       lineas.push(
         JSON.stringify({

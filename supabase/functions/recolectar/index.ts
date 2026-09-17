@@ -24,10 +24,11 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // Edge Function no puede importar del repo. No editar aquí: editar el de
 // scripts y volver a copiar. scripts/pruebas.mjs compara los hashes.
 import {
-  estadoParada,
+  estadoParadaPreparado,
   fechaISO,
   LIMITE_DELAY_SEGUNDOS,
   momentoProgramado,
+  prepararUpdates,
 } from "./gtfsrt.mjs";
 
 const FEED_URL =
@@ -125,10 +126,23 @@ Deno.serve(async (_req) => {
   try {
     // 1. Qué paradas nos importan, y para qué. Se lee en cada pasada a
     //    propósito: abrir una parada es un INSERT, no un despliegue.
-    const { data: paradas, error: e1 } = await supabase
-      .from("parada").select("id, en_vivo, recolectar")
-      .or("en_vivo.eq.true,recolectar.eq.true");
-    if (e1) throw new Error(`leyendo paradas: ${e1.message}`);
+    //
+    //    Y se lee PAGINADO, que no es un adorno: PostgREST corta en 1.000 filas
+    //    y no avisa. Con 658 paradas no se notaba; al pasar a 1.968 la función
+    //    seguía devolviendo 200 y refrescando... solo 1.000 paradas, dejando
+    //    casi la mitad de la ciudad con datos viejos y sin un solo error.
+    const paradas = [];
+    for (let desde = 0; ; desde += 1000) {
+      const { data, error: e1 } = await supabase
+        .from("parada").select("id, en_vivo, recolectar")
+        .or("en_vivo.eq.true,recolectar.eq.true")
+        .order("id")
+        .range(desde, desde + 999);
+      if (e1) throw new Error(`leyendo paradas: ${e1.message}`);
+      if (!data?.length) break;
+      paradas.push(...data);
+      if (data.length < 1000) break;
+    }
     if (!paradas?.length) {
       return Response.json({ ok: true, aviso: "ninguna parada en_vivo ni recolectar" });
     }
@@ -213,9 +227,15 @@ Deno.serve(async (_req) => {
       const startDate = tu.trip.start_date;
       if (!startDate) continue;
 
+      // Los updates del trip se ordenan UNA vez y se consultan para todas sus
+      // paradas. Hacerlo dentro del bucle reordenaba los mismos ~40 updates
+      // 36.076 veces por pasada, y es lo que mataba la function con
+      // `CPU Time exceeded` al ensanchar a 1.968 paradas en vivo.
+      const ups = prepararUpdates(tu.stop_time_update);
+
       for (const est of paradasDelTrip) {
         const stopId = est.stop_id;
-        const s = estadoParada(tu.stop_time_update, est.seq);
+        const s = estadoParadaPreparado(ups, est.seq);
 
         // Histórico: solo las paradas recolectadas. Estrecho a propósito, es lo
         // que crece y lo único que llena el plan gratuito.
