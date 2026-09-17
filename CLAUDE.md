@@ -366,8 +366,10 @@ escrita en la definición del job:
 `cron.job` -> `net.http_post` -> `vault.decrypted_secrets`.
 
 **Ampliar paradas es un INSERT, no un despliegue**: la función lee en cada
-pasada `parada.recolectar`. Lo único que hay que hacer antes es subir su
-horario con `sincronizar.mjs --horario <parada>`.
+pasada `parada.recolectar`. Con el núcleo cargado la parada ya está en vivo,
+así que activar su histórico es sólo `update parada set recolectar = true`.
+(`--horario <parada>` se retiró: el horario ya no se guarda por parada, ver
+"El horario va por patrones".)
 
 Queda además el montaje local, que sigue sirviendo para desarrollo:
 
@@ -478,16 +480,26 @@ desde el 08. Es la diferencia entre una web y algo que se usa, y ya está.
 **3. ~~Pausar el refresco con la pestaña oculta~~ HECHO el 2026-09-16**, junto
 con el estado offline honesto. Ver "Ahorro en el móvil" más arriba.
 
-**4. Ensanchar `recolectar` de 3 a ~20 paradas.** Es lo que queda, y ahora es
+**4. ~~Cargar el núcleo `8220DB` (1.877 paradas)~~ HECHO** (2026-09-17).
+**1.968 paradas en vivo**: las 1.877 del núcleo, el Luas, Irish Rail, los
+andenes del centro y Dún Laoghaire. La línea 14 completa, que era el motivo.
+
+Costó tres arreglos, y ninguno era el que parecía: el `= any(array)` de la
+RPC del horario, el `Intl` sin cachear de `momentoProgramado` y el `select`
+de PostgREST cortando en 1.000 filas sin decirlo. Los tres están contados más
+arriba, en "Dos techos al ensanchar", "Lo que de verdad cuesta CPU en la Edge
+Function" y "PostgREST corta en 1.000 filas y no lo dice".
+
+**5. Ensanchar `recolectar` de 3 a ~20 paradas.** Es lo que queda, y ahora es
 lo que más valor daría: la banda de fiabilidad funciona pero solo tiene datos
 en 3 de las 658 paradas en vivo. No cuesta ni una llamada más a la NTA y son
 83 MB/mes de los 500.
 
-**5. Retención de `serie`.** No hay poda ni particionado. A 20 paradas son unos
+**6. Retención de `serie`.** No hay poda ni particionado. A 20 paradas son unos
 seis meses hasta llenar el plan gratuito. Decidir si los tramos crudos viejos
 se agregan y se tiran conviene hacerlo antes, no con el disco al 90%.
 
-**6. Una pantalla propia de fiabilidad.** `fiabilidad` ya calcula
+**7. Una pantalla propia de fiabilidad.** `fiabilidad` ya calcula
 `error_abs_min` y `p90_min` y nadie los enseña. El p90 es la pregunta de quien
 va a coger un avión: "¿cuánto es lo peor que suele pasar?". Tiene sentido
 cuando haya más paradas con histórico, o la pantalla nace vacía.
@@ -508,6 +520,217 @@ llamada más a la API** — ya nos bajamos todo Dublín y tiramos el 99% —, y 
 no acelera una celda concreta, da muchas más celdas y permite conclusiones a
 nivel línea en días.
 
+## El horario va por patrones (2026-09-17)
+
+Un amigo de Dublín avisó de dos cosas: **"la línea 14 me sale incompleta"** y
+**"mi parada no la encuentra"**. Las dos eran ciertas y eran el mismo problema:
+la caja geográfica.
+
+- `horario` sólo tenía las paradas `en_vivo`, o sea las 658 de la caja. De la
+  línea 14 había **29 paradas y el recorrido más largo era de 15**, de Marino
+  Mart a Richmond St South: el trozo céntrico. El 14 real sigue hasta Beaumont
+  por el norte y Dundrum por el sur.
+- `parada` tenía **658 filas en total**. Las paradas de fuera no es que no se
+  encontraran: no existían en la base.
+
+Ensanchar era la respuesta, pero no cabía: `horario` ocupaba **144 MB con 658
+paradas** (860.010 filas, una por parada y viaje) y el núcleo `8220DB` habría
+pedido ~410 MB de los 500 del plan gratuito, con `serie` creciendo al lado.
+
+**Lo que lo desbloqueó, medido sobre los datos reales: 72.593 viajes caben en
+7.364 patrones.** Lo que multiplica las filas no es la variedad de recorridos
+—sólo hay 437 secuencias de paradas distintas— sino que el mismo recorrido se
+repite cada pocos minutos y sólo cambia la hora de salida. Así que un viaje pasa
+a ser "el patrón P saliendo en el segundo S", con los tiempos guardados como
+desfase desde la salida.
+
+Resultado: **144 MB -> 20 MB (7,2x)**, y la base entera de 210 MB a 87 MB.
+
+Decisiones que conviene no repetir a ciegas:
+
+- **`horario` sigue existiendo como vista**, con las mismas cinco columnas. Por
+  eso la Edge Function desplegada **no necesitó ni un cambio** — lo que más
+  riesgo tenía, viendo que el repo ya fue por detrás de la función una vez.
+  Comprobado en vivo: el cron siguió refrescando las 658 paradas cada minuto
+  durante toda la migración.
+- **La prueba fue una huella md5 de las 860.010 filas antes y después.** Salió
+  idéntica (`557e1c3c…`), igual que la suma de `prog_segs`. Sin esa huella esto
+  no se podía dar por bueno mirando diez filas.
+- **Encima quedó 8,5x más rápido** (140 ms contra 1.196 ms en la consulta que
+  hace el cron): el índice viejo estaba hinchado de tanto upsert.
+- **El id del patrón es el md5 de su contenido, no un `serial`.** Es lo que
+  mantiene idempotente la subida, como el resto del proyecto. La fórmula está
+  duplicada en la migración y en `sincronizar.mjs`; hay una prueba que compara
+  los ids de Node con los que calculó SQL, porque si divergen la carga siguiente
+  duplica el horario entero.
+- **Los 60 bits del id viajan como texto.** Un `number` de JavaScript garantiza
+  53, así que mandarlo como número redondearía ids distintos al mismo.
+- **`route_id` subió de la fila al viaje**, que es de quien dependía. De propina
+  2.090 viajes recuperaron su ruta, que venía a NULL desde la versión vieja de
+  `--horario`.
+- **`viaje.cargado` + `limpiar_horario()`**: el upsert añade y actualiza pero no
+  borra, y los `trip_id` cambian con cada estático. Se marca la pasada y al final
+  se barre lo anterior. El borrado va al final y aparte para que durante la
+  subida convivan las dos cargas y el cron nunca se quede sin horario.
+- **`--horario <parada>` se retiró.** Metía una parada suelta, y un patrón es del
+  viaje entero: no se puede insertar una parada en medio sin recalcular los
+  patrones de todos los viajes que pasan por ella. Eso es justo lo que hace
+  `--centro` / `--nucleo` de una pasada.
+
+**El explorador dejó de paginar.** Pedía `horario` a pelo de 1.000 en 1.000: 16
+peticiones para pintar 15 nodos de la 14, y ~63 con el núcleo cargado. Ahora
+`recorridos_de_linea()` devuelve los recorridos ya agrupados — la 14 son **5
+filas** en vez de 15.000. Ojo con un detalle que costó una vuelta: un `patron`
+incluye los tiempos, así que el mismo recorrido en hora punta y en valle son
+patrones distintos (la 14 tenía 80). El explorador dibuja paradas, no horas, así
+que la RPC agrupa por **secuencia de paradas** y suma los viajes; si no, `veces`
+queda repartido entre gemelos y el desempate de sentidos elige mal.
+
+De 154 líneas que ofrece la web, 151 resuelven recorrido. L25, L27 y S8 no
+tienen ni un viaje dentro de la cobertura actual; se arreglará solo al ensanchar.
+
+**El aviso del amigo está cerrado** (2026-09-17): las 90 paradas de la línea 14
+están en vivo y con llegadas. Se cargó con el estático delante, en local:
+
+```
+node scriptsindexar.mjs .gtfs .indice
+node scriptssincronizar.mjs --nucleo --seco    cuenta antes de subir
+node scriptssincronizar.mjs --nucleo
+```
+
+## Dos techos al ensanchar (2026-09-17, los dos mordieron en producción)
+
+Ensanchar de 658 a 1.968 paradas dejó la web congelada 45 minutos. No fue un
+fallo de datos: fueron dos límites distintos, uno detrás del otro, y el primero
+tapaba al segundo.
+
+**Techo 1, `statement_timeout` en la RPC del horario.** Todas las pasadas del
+cron devolvían 500 con `canceling statement due to statement timeout`. El plan
+de `horario_de_trips_en_ventana_json` resolvía `stop_id = any(p_stop_ids)` con
+un BitmapAnd sobre `patron_parada_stop`, **y ese bitmap se reconstruía una vez
+por cada trip vivo**: 2.300 iteraciones leyendo 272.868 filas cada una, 1,14 M
+de buffers, 26 s. Con 658 paradas pasaba raspando; con 1.968 no.
+
+La cura es cruzar contra `unnest(...)` en vez de usar `= any(...)`: el planner
+hace entonces un hash join y el filtro de paradas se aplica **una** vez sobre
+las 36.076 filas que salen de los trips. Medido sobre las mismas filas:
+**26.186 ms -> 172 ms**. Migración `horario_ventana_por_join`.
+
+Regla general: un `= any(array)` con miles de elementos dentro de un bucle por
+fila es una bomba de relojería que solo se ve en `explain (analyze)`, mirando
+el `loops=`. El coste no está en el número de filas del resultado.
+
+**Techo 2, `CPU Time exceeded` en la Edge Function.** Con la SQL ya rápida, las
+pasadas empezaron a morir con HTTP **546** (`WORKER_RESOURCE_LIMIT`), que no es
+un error de la función sino el runtime matándola. El trabajo por pasada crece
+con el número de pares (trip, parada), no con el de paradas, y a 1.968 se pasa
+del límite del plan gratuito. Se recortó `en_vivo` a 719 y volvió a dar 200 en
+la siguiente pasada.
+
+**Un 546 no deja traza propia en el log de la función**, así que para saber
+dónde se iba el tiempo hubo que desplegar una versión con marcas de fase por
+consola. Vale la pena saber que se puede y que es barato: el CLI ya está
+autenticado en esta máquina y tarda segundos.
+
+```
+npx --no-install supabase functions deploy recolectar --project-ref ihtyzacidpvnvcnfocen
+```
+
+**Al invocar la función a mano para depurar, el cron sigue corriendo.** Las dos
+llamadas se solapan y la NTA devuelve 429 al instante. Es el mismo fair usage
+de siempre, pero cuesta reconocerlo en medio de una incidencia porque parece un
+fallo nuevo.
+
+## Lo que de verdad cuesta CPU en la Edge Function
+
+Cuando el techo de CPU volvió a saltar, la sospecha era `estadoParada`: se
+llama una vez por par (trip, parada) —36.076 veces por pasada— y en cada
+llamada hacía `map` + `filter` + `sort` de los mismos ~40 updates. Parecía
+evidente. **Era falso**, y sólo se vio desplegando una versión con marcas de
+fase por consola:
+
+```
+[fase] 1-2 paradas y rutas: 0 ms
+[fase] 3-4 feed y trips (3150 vivos, 3177 entidades): 4540 ms   <- red, no CPU
+[fase] 5 horario (1495 trips con horario): 530 ms
+[fase] 6 cruce: 1935 ms                                          <- aqui muere
+```
+
+Medido aparte, con 36.000 llamadas que es lo que hace una pasada:
+
+| | Coste |
+|---|---|
+| `estadoParada`, ordenando en cada llamada | 15 ms |
+| `momentoProgramado` | **2.296 ms**, de los cuales **2.286 son `Intl`** |
+
+`Intl.DateTimeFormat` es 150 veces más caro que toda la sospecha original.
+`offsetDublinEnMinutos` construía uno **nuevo en cada llamada** y le pedía
+`formatToParts`: 64 us cada vez. Es el clásico coste escondido detrás de una
+API que parece barata porque cabe en tres líneas.
+
+Las dos curas, las dos en `gtfsrt.mjs`:
+
+- El formateador se construye **una vez** a nivel de módulo.
+- El desfase horario se cachea **por día de servicio**, que es exacto porque el
+  offset se mide a mediodía y por tanto depende sólo del día. La prueba 7
+  compara los dos caminos en los siete días que importan, incluidos los dos del
+  cambio de hora, y con segundos de más de 86400 (GTFS admite "25:10:00").
+- Y de paso `prepararUpdates` / `estadoParadaPreparado`: los updates de un trip
+  se ordenan una vez y se consultan con búsqueda binaria. Son 15 ms de 2.300,
+  así que **no** era el problema, pero el cambio es gratis y la prueba del
+  snapshot verifica que da exactamente lo mismo en las 55.352 combinaciones.
+
+Resultado en producción, sobre la misma fase y la misma carga:
+
+| fase 6 (cruce) | antes | después |
+|---|---|---|
+| con 719 paradas | 1.837 ms | **45 ms** |
+
+**La lección que vale para la próxima:** en un entorno con límite de CPU, medir
+antes de optimizar no es una recomendación de estilo. La optimización "obvia"
+habría dado un 6,4x sobre el 0,7% del tiempo.
+
+## PostgREST corta en 1.000 filas y no lo dice
+
+Al subir `en_vivo` a 1.968 la function siguió devolviendo **200**, y el log de
+fase cantó `cache (1000 filas)`. El paso 1 leía las paradas así:
+
+```js
+.from("parada").select("id, en_vivo, recolectar").or("en_vivo.eq.true,recolectar.eq.true")
+```
+
+Sin `range`, PostgREST devuelve como mucho 1.000 filas. No es un error, no hay
+aviso, y la pasada termina con éxito: simplemente refrescaba 1.000 paradas y
+dejaba las otras 968 con datos viejos **sin que nada fallara**. Es peor que una
+caída, porque una caída se ve.
+
+Ya había mordido antes con el horario, y por eso existe
+`horario_de_trips_en_ventana_json`: agregar en SQL para que vuelva una sola
+fila. Ahora el paso 1 pagina con `.range(desde, desde + 999)` y para cuando una
+página vuelve incompleta.
+
+Regla: **cualquier `select` de PostgREST que pueda pasar de 1.000 filas o
+pagina o agrega.** Y si de verdad quieres saber si te está cortando, cuenta lo
+que recibes y compáralo con lo que esperabas; el código no se va a quejar.
+
+## La carga barre lo que no recarga
+
+`sincronizar.mjs --centro/--nucleo` termina con una limpieza por marca
+`cargado`: borra todo viaje y patrón que no venga de esa pasada. Es lo que
+mantiene la base pequeña, y es también un cepo.
+
+`--nucleo` elegía las paradas **solo por el prefijo `8220DB`**, que deja fuera
+el Luas (`8220GA`), Irish Rail (`8220IR`) y los andenes `8220B1` del centro.
+Como esas paradas seguían marcadas `en_vivo` pero su horario acababa de ser
+barrido, quedaron **91 paradas mudas, 56 de ellas del Luas** — justo las que
+más llegadas tienen.
+
+Regla: **la selección de una carga tiene que ser un superconjunto de lo que ya
+está `en_vivo`.** Ahora `--nucleo` es núcleo ∪ caja ∪ `EXCEPCIONES`, y las
+excepciones son las paradas de `recolectar` que caen fuera de la caja: dejarlas
+sin horario corta la serie histórica, que es lo único que no se puede
+reconstruir después.
+
 ## Supabase
 
 Proyecto `dublin-bus`, región `eu-west-1` (Irlanda), plan gratuito.
@@ -522,8 +745,9 @@ repitió un valor) es justo lo que necesita la detección de congelados.
 siguiente iteración y ya está hecho, 2026-09-08):
 
 - `parada.en_vivo` → se muestra en la web y se le reescribe `llegada_actual`.
-  **Ancho: 658 paradas** (656 del centro ampliado más Rathmines y Dún Laoghaire).
-  Abrirlo no cuesta ni una llamada más a la NTA, el feed ya viene entero.
+  **Ancho: 1.968 paradas** (las 1.877 del núcleo `8220DB`, el Luas, Irish
+  Rail, los andenes del centro y Dún Laoghaire). No cuesta ni una llamada más
+  a la NTA, el feed ya viene entero.
 - `parada.recolectar` → se guarda su histórico en `serie`. **Estrecho: sigue en
   3**, porque el histórico es lo único que llena el plan gratuito (100 paradas
   ≈ 417 MB/mes de 500).
@@ -534,7 +758,9 @@ permite "llegadas en vivo, anchas; histórico, estrecho".
 | Objeto | Qué es |
 |---|---|
 | `parada` | catálogo, sale del estático. `en_vivo`, `recolectar`, `lineas` |
-| `horario` | recorte de `stop_times` de las paradas `en_vivo`. 854.194 filas en la caja ampliada |
+| `horario` | **vista**, ya no tabla. Las mismas 5 columnas de siempre, reconstruidas desde `viaje` + `patron_parada` |
+| `patron` / `patron_parada` | un recorrido: qué paradas, en qué orden, y a cuántos segundos de la salida |
+| `viaje` | un `trip_id` = un patrón + el segundo en que sale + su `route_id` |
 | `serie` | los tramos. Es la tabla que crece |
 | `paso_medido` | vista: un bus concreto en una parada, con su retraso ya medido |
 | `error_prediccion` | vista: cada predicción del feed contra lo que pasó |
@@ -637,6 +863,8 @@ node scripts\congelados.mjs .\datos            análisis del histórico (local)
 node scripts\indexar.mjs .\gtfs .\indice       tras bajar estático nuevo
 node scripts\sincronizar.mjs --centro --seco   cuenta las paradas del centro
 node scripts\sincronizar.mjs --centro          da de alta el centro (en_vivo)
+node scripts\sincronizar.mjs --nucleo --seco   cuenta las 1.877 del nucleo 8220DB
+node scripts\sincronizar.mjs --nucleo          da de alta el nucleo entero
 node scripts\sincronizar.mjs                   sube el día de hoy a Supabase
 node scripts\sincronizar.mjs --seco            cuenta sin subir
 node scripts\sincronizar.mjs --todo            sube todos los días

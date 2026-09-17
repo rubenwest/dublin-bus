@@ -86,10 +86,18 @@ export interface SentidoLinea {
   paradas: string[];
 }
 
-interface FilaHorarioLinea {
-  stop_id: string;
-  trip_id: string;
-  seq: number;
+/**
+ * Un recorrido de una línea, tal y como lo devuelve `recorridos_de_linea`. Ya
+ * viene ordenado de más largo a más corto y con los viajes sumados, así que el
+ * cliente sólo elige los dos sentidos.
+ *
+ * `patron` es de 60 bits y llega como texto a propósito: un `number` de
+ * JavaScript sólo garantiza 53. Aquí es un identificador opaco.
+ */
+interface RecorridoLinea {
+  patron: string;
+  veces: number;
+  paradas: string[] | null;
 }
 
 /**
@@ -282,60 +290,26 @@ export class Api {
   }
 
   private async cargarSentidosLinea(linea: string): Promise<SentidoLinea[]> {
-    const rutas = await this.leer(
-      this.http.get<Array<{ id: string }>>(`${entorno.supabaseUrl}/rest/v1/ruta`, {
-        headers: this.cabeceras,
-        params: { select: 'id', nombre: `eq.${linea}` },
-      }),
+    // Antes esto leía `horario` a pelo y paginaba de 1.000 en 1.000 para
+    // reconstruir los recorridos viaje a viaje: 16 peticiones para acabar
+    // pintando 15 nodos de la línea 14, y ~63 cuando la cobertura se ensanche.
+    // El agrupado ya lo hace la base (`recorridos_de_linea`), que devuelve un
+    // puñado de recorridos con cuántos viajes usa cada uno.
+    const recorridos = await this.leer(
+      this.http.post<RecorridoLinea[]>(
+        `${entorno.supabaseUrl}/rest/v1/rpc/recorridos_de_linea`,
+        { p_linea: linea },
+        { headers: this.cabeceras },
+      ),
     );
-    if (!rutas.length) return [];
 
-    // PostgREST limita cada respuesta. Se pagina porque una línea frecuente
-    // puede sumar miles de filas aunque solo cubramos el centro de Dublín.
-    const filtroRutas = `in.(${rutas
-      .map((r) => `"${r.id.replaceAll('"', '\\"')}"`)
-      .join(',')})`;
-    const filas: FilaHorarioLinea[] = [];
-    const lote = 1000;
-    for (let offset = 0; ; offset += lote) {
-      const pagina = await this.leer(
-        this.http.get<FilaHorarioLinea[]>(`${entorno.supabaseUrl}/rest/v1/horario`, {
-          headers: this.cabeceras,
-          params: {
-            select: 'stop_id,trip_id,seq',
-            route_id: filtroRutas,
-            order: 'trip_id.asc,seq.asc',
-            limit: String(lote),
-            offset: String(offset),
-          },
-        }),
-      );
-      filas.push(...pagina);
-      if (pagina.length < lote) break;
-    }
-
-    const porViaje = new Map<string, FilaHorarioLinea[]>();
-    for (const fila of filas) {
-      if (!porViaje.has(fila.trip_id)) porViaje.set(fila.trip_id, []);
-      porViaje.get(fila.trip_id)!.push(fila);
-    }
-
-    const patrones = new Map<string, { paradas: string[]; veces: number }>();
-    for (const viaje of porViaje.values()) {
-      const paradas = viaje
-        .sort((a, b) => a.seq - b.seq)
-        .map((f) => f.stop_id)
-        .filter((id, i, todos) => i === 0 || id !== todos[i - 1]);
-      if (!paradas.length) continue;
-      const firma = paradas.join('|');
-      const patron = patrones.get(firma);
-      if (patron) patron.veces++;
-      else patrones.set(firma, { paradas, veces: 1 });
-    }
-
-    const candidatos = [...patrones.values()].sort(
-      (a, b) => b.paradas.length - a.paradas.length || b.veces - a.veces,
-    );
+    const candidatos = recorridos
+      .map((r) => ({
+        // Una circular puede repetir parada seguida; en el dibujo es un nodo.
+        paradas: (r.paradas ?? []).filter((id, i, todos) => i === 0 || id !== todos[i - 1]),
+        veces: r.veces,
+      }))
+      .filter((r) => r.paradas.length);
     if (!candidatos.length) return [];
 
     const primero = candidatos[0];

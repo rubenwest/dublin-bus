@@ -13,7 +13,13 @@
 
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { estadoParada } from "./gtfsrt.mjs";
+import {
+  estadoParada,
+  estadoParadaPreparado,
+  momentoProgramado,
+  prepararUpdates,
+} from "./gtfsrt.mjs";
+import { idPatron } from "./patron.mjs";
 
 const SNAPSHOT = "./snapshots/feed-1.json";
 const ORIGEN = "./scripts/gtfsrt.mjs";
@@ -151,18 +157,30 @@ if (!fs.existsSync(SNAPSHOT)) {
   console.log("\n5. Contra el snapshot real");
   const feed = JSON.parse(fs.readFileSync(SNAPSHOT, "utf8"));
 
-  let evaluadas = 0, saltadas = 0, excepciones = 0;
+  let evaluadas = 0, saltadas = 0, excepciones = 0, discrepancias = 0;
 
   for (const e of feed.entity ?? []) {
     const ups = e.trip_update?.stop_time_update;
     if (!ups?.length) continue;
     const maxSeq = Math.max(...ups.map((x) => Number(x.stop_sequence) || 0));
+    const preparados = prepararUpdates(ups);
 
     for (let s = 1; s <= maxSeq; s++) {
       try {
         const r = estadoParada(ups, s);
         evaluadas++;
         if (r.rel === "SKIPPED") saltadas++;
+        // La versión preparada existe solo por velocidad. Si algún día deja de
+        // dar EXACTAMENTE lo mismo, es un bug, no una optimización.
+        const q = estadoParadaPreparado(preparados, s);
+        if (JSON.stringify(r) !== JSON.stringify(q)) {
+          if (discrepancias < 3) {
+            console.log(`FALLO  difieren en seq ${s}`);
+            console.log(`       suelta:    ${JSON.stringify(r)}`);
+            console.log(`       preparada: ${JSON.stringify(q)}`);
+          }
+          discrepancias++;
+        }
       } catch {
         excepciones++;
       }
@@ -172,6 +190,8 @@ if (!fs.existsSync(SNAPSHOT)) {
   console.log(`  combinaciones (trip, parada) evaluadas: ${evaluadas}`);
   console.log(`  paradas SKIPPED detectadas:             ${saltadas}`);
   console.log(`  excepciones:                            ${excepciones}`);
+  console.log(`  discrepancias suelta vs preparada:      ${discrepancias}`);
+  if (discrepancias) fallos++;
 
   // 411 es el número de SKIPPED que contiene ese snapshot. Si cambia, o el
   // snapshot es otro o la detección se ha roto.
@@ -181,6 +201,106 @@ if (!fs.existsSync(SNAPSHOT)) {
   }
   if (excepciones) fallos++;
 }
+
+// --- 6. El id de patrón de Node vale lo mismo que el de SQL -----------------
+//
+// La fórmula está duplicada: en `scripts/patron.mjs` para la subida y en SQL
+// dentro de la migración que rellenó la tabla. Si divergen, `sincronizar.mjs`
+// calcularía ids nuevos para patrones que ya existen y la siguiente carga
+// duplicaría el horario entero en vez de reescribirlo — y en silencio, porque
+// el upsert no se queja.
+//
+// Los casos son patrones REALES: el texto y el id salieron de `viaje` y
+// `patron_parada` con la fórmula de Postgres, no de correr este mismo código.
+console.log("\n6. El id de patrón coincide con el que calculó SQL");
+{
+  const casos = [
+    ["169631651733316633", "8220B1351201:1:0,8220B1351401:2:120,8220B1351001:3:360,8220B1354001:4:780"],
+    ["173908849935241047", "8220B1351201:1:0,8220B1351401:2:120,8220B1351001:3:420,8220B1354001:4:900"],
+    ["100145238504564061", "8220B1351201:1:0,8220B1351401:2:120,8220B1351001:3:660,8220B1354001:4:1260"],
+    ["309666774760806993", "8220DB004413:28:0,8220DB000316:29:660,8220DB002499:30:1020,8220DB005140:31:1260"],
+  ];
+  for (const [esperado, texto] of casos) {
+    const obtenido = idPatron(texto);
+    if (obtenido === esperado) {
+      console.log(`  ok   ${esperado}`);
+    } else {
+      console.log(`FALLO  esperaba ${esperado}, he calculado ${obtenido}`);
+      fallos++;
+    }
+  }
+  // Y que siga siendo texto: en number, 60 bits se redondean.
+  if (typeof idPatron("x") !== "string") {
+    console.log("FALLO  idPatron debe devolver texto, no number (60 bits no caben en 53)");
+    fallos++;
+  }
+}
+
+// --- 7. El día de servicio cacheado vale lo mismo que calcularlo cada vez ---
+//
+// `momentoProgramado` cachea el desfase horario de Dublín por día porque `Intl`
+// cuesta 64 us por llamada y el recolector la llama 36.000 veces en UNA pasada:
+// 2.296 ms, de los cuales 2.286 eran el `Intl`. Eso, y no el barrido de los
+// updates (15 ms), era lo que reventaba el límite de CPU de la Edge Function.
+//
+// La caché es correcta porque el offset se mide a mediodía y depende solo del
+// día. Pero eso hay que comprobarlo, y sobre todo en los dos días del año en
+// que Dublín cambia la hora.
+console.log("\n7. La hora programada no cambia al cachear el día");
+{
+  // El cálculo original, tal cual estaba antes de la caché.
+  const sinCache = (startDate, segundos) => {
+    const y = +startDate.slice(0, 4);
+    const mo = +startDate.slice(4, 6);
+    const d = +startDate.slice(6, 8);
+    const fmt = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/Dublin",
+      timeZoneName: "longOffset",
+    });
+    const parte = fmt
+      .formatToParts(new Date(Date.UTC(y, mo - 1, d, 12, 0, 0)))
+      .find((x) => x.type === "timeZoneName").value;
+    const m = parte.match(/GMT([+-])(\d{2}):(\d{2})/);
+    const off = !m ? 0 : (m[1] === "-" ? -1 : 1) * (+m[2] * 60 + +m[3]);
+    return new Date(Date.UTC(y, mo - 1, d, 0, 0, 0) - off * 60_000 + segundos * 1000);
+  };
+
+  const dias = [
+    ["20260101", "invierno, GMT"],
+    ["20260328", "víspera de adelantar el reloj"],
+    ["20260329", "el día que Dublín adelanta el reloj"],
+    ["20260630", "verano, IST"],
+    ["20261024", "víspera de atrasar el reloj"],
+    ["20261025", "el día que Dublín atrasa el reloj"],
+    ["20260917", "un día normal"],
+  ];
+  // 0 = medianoche; 86400 y más = trayecto que cruza medianoche, que GTFS
+  // admite y el estático usa de verdad.
+  const horas = [0, 3600, 30000, 43200, 86399, 86400, 90000, 100000];
+
+  let diferencias = 0;
+  for (const [dia, que] of dias) {
+    let malDia = 0;
+    for (const seg of horas) {
+      if (momentoProgramado(dia, seg).getTime() !== sinCache(dia, seg).getTime()) malDia++;
+    }
+    diferencias += malDia;
+    console.log(`  ${malDia ? "FALLO" : "ok   "} ${dia} (${que})`);
+  }
+
+  // Y que un día no se lleve por delante al de al lado en la caché, que es el
+  // fallo que tendría un mapa mal indexado: se piden intercalados.
+  for (let vuelta = 0; vuelta < 3; vuelta++) {
+    for (const [dia] of dias) {
+      for (const seg of horas) {
+        if (momentoProgramado(dia, seg).getTime() !== sinCache(dia, seg).getTime()) diferencias++;
+      }
+    }
+  }
+  if (diferencias) fallos++;
+  else console.log("  ok   y siguen coincidiendo pidiéndolos intercalados");
+}
+
 
 console.log(fallos ? `\n${fallos} FALLOS\n` : "\nTodo correcto\n");
 process.exit(fallos ? 1 : 0);

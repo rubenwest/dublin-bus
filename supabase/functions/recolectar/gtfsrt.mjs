@@ -28,14 +28,54 @@ export const LIMITE_DELAY_SEGUNDOS = 45 * 60;
  *   rel: SCHEDULED | SKIPPED | NO_DATA | SIN_UPDATE
  */
 export function estadoParada(ups, seqObjetivo) {
-  const previos = (ups ?? [])
+  return estadoParadaPreparado(prepararUpdates(ups), seqObjetivo);
+}
+
+/**
+ * Los stop_time_update de UN trip, ordenados de mayor a menor stop_sequence y
+ * listos para consultarlos muchas veces.
+ *
+ * Existe por coste, no por gusto. `estadoParada` hacía map + filter + sort en
+ * cada llamada, y el recolector la llama una vez por par (trip, parada):
+ * 36.076 veces por pasada, reordenando los mismos ~40 updates una y otra vez.
+ * Eso es lo que hacía que la Edge Function muriese con `CPU Time exceeded` al
+ * pasar de 658 a 1.968 paradas en vivo.
+ *
+ * Quien recorra varias paradas del mismo trip debe preparar una vez y llamar
+ * luego a `estadoParadaPreparado`. Para una parada suelta, `estadoParada` sigue
+ * valiendo y hace exactamente lo mismo.
+ */
+export function prepararUpdates(ups) {
+  return (ups ?? [])
     .map((u) => ({ u, seq: Number(u.stop_sequence) }))
-    .filter((x) => !Number.isNaN(x.seq) && x.seq <= seqObjetivo)
+    .filter((x) => !Number.isNaN(x.seq))
     .sort((a, b) => b.seq - a.seq);
+}
 
-  if (!previos.length) return { rel: "SIN_UPDATE", delay: null, horaAbs: null };
+/**
+ * Lo mismo que `estadoParada`, sobre unos updates ya preparados.
+ *
+ * El recorte por `seq <= seqObjetivo` que antes hacía el `filter` se hace aquí
+ * con una búsqueda binaria sobre el array ya ordenado: O(log u) en vez de O(u)
+ * por parada, y sin crear un array nuevo cada vez. El sort de JavaScript es
+ * estable, así que ante dos updates con la misma `stop_sequence` se elige el
+ * mismo que antes.
+ */
+export function estadoParadaPreparado(previosTodos, seqObjetivo) {
+  // Primer índice cuya seq es <= seqObjetivo. El array va de mayor a menor.
+  let lo = 0, hi = previosTodos.length;
+  while (lo < hi) {
+    const medio = (lo + hi) >> 1;
+    if (previosTodos[medio].seq > seqObjetivo) lo = medio + 1;
+    else hi = medio;
+  }
+  const desde = lo;
 
-  const cercano = previos[0];
+  if (desde >= previosTodos.length) {
+    return { rel: "SIN_UPDATE", delay: null, horaAbs: null };
+  }
+
+  const cercano = previosTodos[desde];
   const relCercano = cercano.u.schedule_relationship ?? "SCHEDULED";
 
   if (relCercano === "NO_DATA") {
@@ -56,7 +96,8 @@ export function estadoParada(ups, seqObjetivo) {
 
   let delay = null,
     origen = horaAbs === null ? null : seqObjetivo;
-  for (const { u, seq } of previos) {
+  for (let i = desde; i < previosTodos.length; i++) {
+    const { u, seq } = previosTodos[i];
     if ((u.schedule_relationship ?? "SCHEDULED") === "NO_DATA") break;
     const d = u.arrival?.delay ?? u.departure?.delay;
     if (d !== undefined) {
@@ -96,12 +137,17 @@ export function tripsEnVivo(feed) {
 
 // --- Horas ------------------------------------------------------------------
 
+/**
+ * Construir un `Intl.DateTimeFormat` cuesta mucho más que usarlo, así que se
+ * construye una vez. Ver el comentario de `momentoProgramado`.
+ */
+const FMT_DUBLIN = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/Dublin",
+  timeZoneName: "longOffset",
+});
+
 export function offsetDublinEnMinutos(fecha) {
-  const fmt = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Dublin",
-    timeZoneName: "longOffset",
-  });
-  const p = fmt.formatToParts(fecha).find((x) => x.type === "timeZoneName").value;
+  const p = FMT_DUBLIN.formatToParts(fecha).find((x) => x.type === "timeZoneName").value;
   const m = p.match(/GMT([+-])(\d{2}):(\d{2})/);
   if (!m) return 0;
   return (m[1] === "-" ? -1 : 1) * (+m[2] * 60 + +m[3]);
@@ -113,17 +159,41 @@ export function fechaISO(startDate) {
 }
 
 /**
+ * Medianoche de un `start_date` en UTC, y el desfase horario de Dublín ese día.
+ *
+ * Se cachea por día, y no es un microajuste: `Intl` es lentísimo comparado con
+ * la aritmética que hay alrededor. Medido con 36.000 llamadas, que es lo que
+ * hace el recolector en UNA pasada: **2.296 ms en total, de los cuales 2.286
+ * son el `Intl`**. Eso, y no el barrido de los updates (15 ms), es lo que
+ * mataba la Edge Function con `CPU Time exceeded` al ensanchar las paradas.
+ *
+ * El offset se mide a mediodía a propósito, así que depende solo del día: para
+ * un mismo `start_date` la respuesta es siempre la misma y cachearla no cambia
+ * ningún resultado. El mapa crece una entrada por día de servicio visto.
+ */
+const DIAS = new Map();
+
+function diaDeServicio(startDate) {
+  let dia = DIAS.get(startDate);
+  if (dia === undefined) {
+    const y = +startDate.slice(0, 4);
+    const mo = +startDate.slice(4, 6);
+    const d = +startDate.slice(6, 8);
+    const medianoche = Date.UTC(y, mo - 1, d, 0, 0, 0);
+    const off = offsetDublinEnMinutos(new Date(Date.UTC(y, mo - 1, d, 12, 0, 0)));
+    dia = { base: medianoche - off * 60_000 };
+    DIAS.set(startDate, dia);
+  }
+  return dia;
+}
+
+/**
  * start_date "20260904" + segundos desde medianoche -> Date.
  * GTFS admite "25:10:00" para trayectos que cruzan medianoche, y por eso los
  * segundos pueden pasar de 86400: se suman igual y sale el día siguiente.
  */
 export function momentoProgramado(startDate, segundos) {
-  const y = +startDate.slice(0, 4);
-  const mo = +startDate.slice(4, 6);
-  const d = +startDate.slice(6, 8);
-  const tentativo = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0));
-  const off = offsetDublinEnMinutos(tentativo);
-  return new Date(Date.UTC(y, mo - 1, d, 0, 0, 0) - off * 60_000 + segundos * 1000);
+  return new Date(diaDeServicio(startDate).base + segundos * 1000);
 }
 
 /**

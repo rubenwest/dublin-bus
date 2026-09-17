@@ -17,3 +17,6 @@ datos/*.log
 
 # arranque del servidor de desarrollo desde Claude Code, es local
 .claude/launch.json
+
+# ficheros de trabajo del CLI de Supabase
+supabase/.temp/
