@@ -366,8 +366,10 @@ escrita en la definición del job:
 `cron.job` -> `net.http_post` -> `vault.decrypted_secrets`.
 
 **Ampliar paradas es un INSERT, no un despliegue**: la función lee en cada
-pasada `parada.recolectar`. Lo único que hay que hacer antes es subir su
-horario con `sincronizar.mjs --horario <parada>`.
+pasada `parada.recolectar`. Con el núcleo cargado la parada ya está en vivo,
+así que activar su histórico es sólo `update parada set recolectar = true`.
+(`--horario <parada>` se retiró: el horario ya no se guarda por parada, ver
+"El horario va por patrones".)
 
 Queda además el montaje local, que sigue sirviendo para desarrollo:
 
@@ -478,16 +480,21 @@ desde el 08. Es la diferencia entre una web y algo que se usa, y ya está.
 **3. ~~Pausar el refresco con la pestaña oculta~~ HECHO el 2026-09-16**, junto
 con el estado offline honesto. Ver "Ahorro en el móvil" más arriba.
 
-**4. Ensanchar `recolectar` de 3 a ~20 paradas.** Es lo que queda, y ahora es
+**4. Cargar el núcleo `8220DB` (1.877 paradas).** El adelgazamiento ya está
+hecho y desplegado (ver "El horario va por patrones"); lo que falta es correr
+`sincronizar.mjs --nucleo` con el estático delante. Es lo que arregla la línea 14
+incompleta y las paradas que no aparecen en el buscador.
+
+**5. Ensanchar `recolectar` de 3 a ~20 paradas.** Es lo que queda, y ahora es
 lo que más valor daría: la banda de fiabilidad funciona pero solo tiene datos
 en 3 de las 658 paradas en vivo. No cuesta ni una llamada más a la NTA y son
 83 MB/mes de los 500.
 
-**5. Retención de `serie`.** No hay poda ni particionado. A 20 paradas son unos
+**6. Retención de `serie`.** No hay poda ni particionado. A 20 paradas son unos
 seis meses hasta llenar el plan gratuito. Decidir si los tramos crudos viejos
 se agregan y se tiran conviene hacerlo antes, no con el disco al 90%.
 
-**6. Una pantalla propia de fiabilidad.** `fiabilidad` ya calcula
+**7. Una pantalla propia de fiabilidad.** `fiabilidad` ya calcula
 `error_abs_min` y `p90_min` y nadie los enseña. El p90 es la pregunta de quien
 va a coger un avión: "¿cuánto es lo peor que suele pasar?". Tiene sentido
 cuando haya más paradas con histórico, o la pantalla nace vacía.
@@ -507,6 +514,84 @@ flojas (142, 111) → 6 semanas. **Ampliar la lista de paradas no cuesta ni una
 llamada más a la API** — ya nos bajamos todo Dublín y tiramos el 99% —, y aunque
 no acelera una celda concreta, da muchas más celdas y permite conclusiones a
 nivel línea en días.
+
+## El horario va por patrones (2026-09-17)
+
+Un amigo de Dublín avisó de dos cosas: **"la línea 14 me sale incompleta"** y
+**"mi parada no la encuentra"**. Las dos eran ciertas y eran el mismo problema:
+la caja geográfica.
+
+- `horario` sólo tenía las paradas `en_vivo`, o sea las 658 de la caja. De la
+  línea 14 había **29 paradas y el recorrido más largo era de 15**, de Marino
+  Mart a Richmond St South: el trozo céntrico. El 14 real sigue hasta Beaumont
+  por el norte y Dundrum por el sur.
+- `parada` tenía **658 filas en total**. Las paradas de fuera no es que no se
+  encontraran: no existían en la base.
+
+Ensanchar era la respuesta, pero no cabía: `horario` ocupaba **144 MB con 658
+paradas** (860.010 filas, una por parada y viaje) y el núcleo `8220DB` habría
+pedido ~410 MB de los 500 del plan gratuito, con `serie` creciendo al lado.
+
+**Lo que lo desbloqueó, medido sobre los datos reales: 72.593 viajes caben en
+7.364 patrones.** Lo que multiplica las filas no es la variedad de recorridos
+—sólo hay 437 secuencias de paradas distintas— sino que el mismo recorrido se
+repite cada pocos minutos y sólo cambia la hora de salida. Así que un viaje pasa
+a ser "el patrón P saliendo en el segundo S", con los tiempos guardados como
+desfase desde la salida.
+
+Resultado: **144 MB -> 20 MB (7,2x)**, y la base entera de 210 MB a 87 MB.
+
+Decisiones que conviene no repetir a ciegas:
+
+- **`horario` sigue existiendo como vista**, con las mismas cinco columnas. Por
+  eso la Edge Function desplegada **no necesitó ni un cambio** — lo que más
+  riesgo tenía, viendo que el repo ya fue por detrás de la función una vez.
+  Comprobado en vivo: el cron siguió refrescando las 658 paradas cada minuto
+  durante toda la migración.
+- **La prueba fue una huella md5 de las 860.010 filas antes y después.** Salió
+  idéntica (`557e1c3c…`), igual que la suma de `prog_segs`. Sin esa huella esto
+  no se podía dar por bueno mirando diez filas.
+- **Encima quedó 8,5x más rápido** (140 ms contra 1.196 ms en la consulta que
+  hace el cron): el índice viejo estaba hinchado de tanto upsert.
+- **El id del patrón es el md5 de su contenido, no un `serial`.** Es lo que
+  mantiene idempotente la subida, como el resto del proyecto. La fórmula está
+  duplicada en la migración y en `sincronizar.mjs`; hay una prueba que compara
+  los ids de Node con los que calculó SQL, porque si divergen la carga siguiente
+  duplica el horario entero.
+- **Los 60 bits del id viajan como texto.** Un `number` de JavaScript garantiza
+  53, así que mandarlo como número redondearía ids distintos al mismo.
+- **`route_id` subió de la fila al viaje**, que es de quien dependía. De propina
+  2.090 viajes recuperaron su ruta, que venía a NULL desde la versión vieja de
+  `--horario`.
+- **`viaje.cargado` + `limpiar_horario()`**: el upsert añade y actualiza pero no
+  borra, y los `trip_id` cambian con cada estático. Se marca la pasada y al final
+  se barre lo anterior. El borrado va al final y aparte para que durante la
+  subida convivan las dos cargas y el cron nunca se quede sin horario.
+- **`--horario <parada>` se retiró.** Metía una parada suelta, y un patrón es del
+  viaje entero: no se puede insertar una parada en medio sin recalcular los
+  patrones de todos los viajes que pasan por ella. Eso es justo lo que hace
+  `--centro` / `--nucleo` de una pasada.
+
+**El explorador dejó de paginar.** Pedía `horario` a pelo de 1.000 en 1.000: 16
+peticiones para pintar 15 nodos de la 14, y ~63 con el núcleo cargado. Ahora
+`recorridos_de_linea()` devuelve los recorridos ya agrupados — la 14 son **5
+filas** en vez de 15.000. Ojo con un detalle que costó una vuelta: un `patron`
+incluye los tiempos, así que el mismo recorrido en hora punta y en valle son
+patrones distintos (la 14 tenía 80). El explorador dibuja paradas, no horas, así
+que la RPC agrupa por **secuencia de paradas** y suma los viajes; si no, `veces`
+queda repartido entre gemelos y el desempate de sentidos elige mal.
+
+De 154 líneas que ofrece la web, 151 resuelven recorrido. L25, L27 y S8 no
+tienen ni un viaje dentro de la cobertura actual; se arreglará solo al ensanchar.
+
+**Lo que queda para cerrar el aviso del amigo:** cargar el núcleo. Necesita el
+ZIP del estático, así que se corre en local:
+
+```
+node scripts\indexar.mjs .\gtfs .\indice
+node scripts\sincronizar.mjs --nucleo --seco    cuenta antes de subir
+node scripts\sincronizar.mjs --nucleo
+```
 
 ## Supabase
 
@@ -534,7 +619,9 @@ permite "llegadas en vivo, anchas; histórico, estrecho".
 | Objeto | Qué es |
 |---|---|
 | `parada` | catálogo, sale del estático. `en_vivo`, `recolectar`, `lineas` |
-| `horario` | recorte de `stop_times` de las paradas `en_vivo`. 854.194 filas en la caja ampliada |
+| `horario` | **vista**, ya no tabla. Las mismas 5 columnas de siempre, reconstruidas desde `viaje` + `patron_parada` |
+| `patron` / `patron_parada` | un recorrido: qué paradas, en qué orden, y a cuántos segundos de la salida |
+| `viaje` | un `trip_id` = un patrón + el segundo en que sale + su `route_id` |
 | `serie` | los tramos. Es la tabla que crece |
 | `paso_medido` | vista: un bus concreto en una parada, con su retraso ya medido |
 | `error_prediccion` | vista: cada predicción del feed contra lo que pasó |
@@ -637,6 +724,8 @@ node scripts\congelados.mjs .\datos            análisis del histórico (local)
 node scripts\indexar.mjs .\gtfs .\indice       tras bajar estático nuevo
 node scripts\sincronizar.mjs --centro --seco   cuenta las paradas del centro
 node scripts\sincronizar.mjs --centro          da de alta el centro (en_vivo)
+node scripts\sincronizar.mjs --nucleo --seco   cuenta las 1.877 del nucleo 8220DB
+node scripts\sincronizar.mjs --nucleo          da de alta el nucleo entero
 node scripts\sincronizar.mjs                   sube el día de hoy a Supabase
 node scripts\sincronizar.mjs --seco            cuenta sin subir
 node scripts\sincronizar.mjs --todo            sube todos los días

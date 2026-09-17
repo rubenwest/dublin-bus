@@ -24,6 +24,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { cargarDotEnv } from "./entorno.mjs";
+import { idPatron } from "./patron.mjs";
 
 cargarDotEnv();
 
@@ -32,6 +33,7 @@ const SECO = args.includes("--seco");
 const TODO = args.includes("--todo");
 const HORARIO = args.includes("--horario");
 const CENTRO = args.includes("--centro");
+const NUCLEO = args.includes("--nucleo");
 const DIA = args.includes("--dia") ? args[args.indexOf("--dia") + 1] : null;
 const datosDir = "./datos";
 
@@ -218,72 +220,29 @@ async function subirParadas(ids) {
 }
 
 /**
- * Sube a Supabase el recorte de stop_times.txt de las paradas indicadas.
+ * `--horario <parada>` ya no existe, y no es un olvido.
  *
- * Lo necesita la Edge Function: sin el horario no sabe a qué hora estaba
- * programado cada trip, y sin eso no hay retraso que medir. El índice
- * completo son 179 MB y 10.181 paradas; aquí solo van las que se recolectan.
+ * Subía una parada suelta a la tabla `horario`, que era una fila por (parada,
+ * viaje). Ahora el horario se guarda por PATRÓN de recorrido, y un patrón es
+ * una propiedad del viaje entero: no se puede meter una parada en medio sin
+ * recalcular los patrones de todos los viajes que pasan por ella, que es
+ * exactamente lo que hace `--centro` / `--nucleo` de una pasada.
  *
- * Hay que relanzarlo cada vez que se baje un estático nuevo.
+ * Con `--nucleo` cargado son las 1.877 paradas de Dublin Bus, así que la parada
+ * que quisieras dar de alta a mano ya está: activarla es un UPDATE de un
+ * `boolean`, no una subida.
  */
-async function subirHorario(paradas) {
-  if (!paradas.length) {
-    console.error(
-      "Uso: node scripts\\sincronizar.mjs --horario <parada> [<parada>...]\n" +
-        "Ejemplo: node scripts\\sincronizar.mjs --horario 8220DB000270 8250DB002039",
-    );
-    process.exit(1);
-  }
-
-  for (const stop of paradas) {
-    const f = path.join("./indice/paradas", `${stop}.jsonl`);
-    if (!fs.existsSync(f)) {
-      console.error(`  ${stop}: no está en el índice. ¿Has corrido indexar.mjs?`);
-      continue;
-    }
-
-    // La PK es (stop_id, trip_id); el índice puede traer el mismo trip dos
-    // veces si la parada aparece dos veces en el recorrido (circulares).
-    const porTrip = new Map();
-    for (const linea of fs.readFileSync(f, "utf8").split("\n")) {
-      if (!linea.trim()) continue;
-      const [tripId, seq, prog] = JSON.parse(linea);
-      porTrip.set(tripId, { stop_id: stop, trip_id: tripId, seq, prog_segs: prog });
-    }
-    const filas = [...porTrip.values()];
-
-    if (SECO) {
-      console.log(`  ${stop}: ${filas.length} trips (seco, no se sube)`);
-      continue;
-    }
-
-    for (let i = 0; i < filas.length; i += LOTE) {
-      const res = await fetch(`${URL_BASE}/rest/v1/horario?on_conflict=stop_id,trip_id`, {
-        method: "POST",
-        headers: {
-          apikey: SERVICE_KEY,
-          Authorization: `Bearer ${SERVICE_KEY}`,
-          "Content-Type": "application/json",
-          Prefer: "resolution=merge-duplicates,return=minimal",
-        },
-        body: JSON.stringify(filas.slice(i, i + LOTE)),
-        signal: AbortSignal.timeout(60_000),
-      });
-      if (!res.ok) {
-        throw new Error(`horario ${stop}: HTTP ${res.status} — ${(await res.text()).slice(0, 300)}`);
-      }
-    }
-    console.log(`  ${stop}: ${filas.length} trips subidos`);
-  }
-
-  if (!SECO) {
-    await subirParadas(new Set(paradas));
-    await subirRutas();
-    console.log(
-      "\nActiva la recolección de esas paradas con:\n" +
-        "  update parada set recolectar = true where id in (...);",
-    );
-  }
+function avisarHorarioRetirado() {
+  console.error(
+    "`--horario <parada>` se retiró: el horario ya no se guarda por parada, se\n" +
+      "guarda por patrón de recorrido, y un patrón es de un viaje entero.\n\n" +
+      "Para ensanchar la cobertura:\n" +
+      "  node scripts\\sincronizar.mjs --nucleo --seco   cuenta las 1.877 del núcleo\n" +
+      "  node scripts\\sincronizar.mjs --nucleo          las da de alta en vivo\n\n" +
+      "Para empezar a guardar el histórico de una parada que ya está en vivo:\n" +
+      "  update parada set recolectar = true where id in ('8220DB000270');",
+  );
+  process.exit(1);
 }
 
 /**
@@ -324,6 +283,10 @@ async function upsertLotes(tabla, onConflict, filas, timeoutMs = 60_000) {
 async function subirCentro() {
   const caja = leerCaja();
   const catalogoP = "./indice/paradas.json";
+  // `--nucleo` deja de elegir por caja y coge las 1.877 paradas de Dublin Bus.
+  // Con el horario por patrones eso cabe: la caja del centro ocupaba 144 MB y
+  // el núcleo entero se queda en decenas, no en los ~410 MB de antes.
+  const prefijoNucleo = NUCLEO ? "8220DB" : null;
   for (const f of [catalogoP, "./indice/trip-ruta.json", "./indice/rutas.json"]) {
     if (!fs.existsSync(f)) {
       console.error(`Falta ${f}. Corre antes: node scripts/indexar.mjs ./gtfs ./indice`);
@@ -335,15 +298,19 @@ async function subirCentro() {
   const tripRuta = JSON.parse(fs.readFileSync("./indice/trip-ruta.json", "utf8"));
   const rutas = JSON.parse(fs.readFileSync("./indice/rutas.json", "utf8"));
 
-  const dentro = catalogo.filter(
-    (p) =>
-      p.lat != null && p.lon != null &&
-      p.lat >= caja.latMin && p.lat <= caja.latMax &&
-      p.lon >= caja.lonMin && p.lon <= caja.lonMax,
-  );
+  const dentro = prefijoNucleo
+    ? catalogo.filter((p) => p.id.startsWith(prefijoNucleo))
+    : catalogo.filter(
+        (p) =>
+          p.lat != null && p.lon != null &&
+          p.lat >= caja.latMin && p.lat <= caja.latMax &&
+          p.lon >= caja.lonMin && p.lon <= caja.lonMax,
+      );
 
   console.log(
-    `Caja lat[${caja.latMin}, ${caja.latMax}] lon[${caja.lonMin}, ${caja.lonMax}]\n` +
+    (prefijoNucleo
+      ? `Núcleo Dublin Bus (${prefijoNucleo}*)\n`
+      : `Caja lat[${caja.latMin}, ${caja.latMax}] lon[${caja.lonMin}, ${caja.lonMax}]\n`) +
       `${dentro.length} paradas dentro (de ${catalogo.length} con servicio).`,
   );
   if (!dentro.length) {
@@ -351,7 +318,11 @@ async function subirCentro() {
     process.exit(1);
   }
 
-  const horarioFilas = [];
+  // El índice está por parada, pero un patrón es por VIAJE: hay que darle la
+  // vuelta igual que se le dio la vuelta al bucle del recolector. Se junta todo
+  // en memoria (son ~2,5 M de tuplas pequeñas en el núcleo entero) y luego se
+  // agrupa por trip.
+  const porViaje = new Map();
   const paradaFilas = [];
   let sinFichero = 0;
 
@@ -361,19 +332,23 @@ async function subirCentro() {
       sinFichero++;
       continue;
     }
-    // La PK del horario es (stop_id, trip_id); una circular puede repetir trip.
-    const porTrip = new Map();
+    // Una circular puede pasar dos veces por la misma parada en el mismo viaje.
+    // Se queda el paso de mayor `seq`, que es lo que hacía la PK (stop_id,
+    // trip_id) de la tabla vieja: la vista `horario` sigue siendo 1 a 1.
+    const ultimoPaso = new Map();
     const lineas = new Set();
     for (const linea of fs.readFileSync(f, "utf8").split("\n")) {
       if (!linea.trim()) continue;
       const [tripId, seq, prog] = JSON.parse(linea);
+      const previo = ultimoPaso.get(tripId);
+      if (!previo || seq > previo.seq) ultimoPaso.set(tripId, { seq, prog });
       const routeId = tripRuta[tripId] ?? null;
-      porTrip.set(tripId, {
-        stop_id: p.id, trip_id: tripId, seq, prog_segs: prog, route_id: routeId,
-      });
       if (routeId && rutas[routeId]) lineas.add(rutas[routeId]);
     }
-    for (const fila of porTrip.values()) horarioFilas.push(fila);
+    for (const [tripId, paso] of ultimoPaso) {
+      if (!porViaje.has(tripId)) porViaje.set(tripId, []);
+      porViaje.get(tripId).push({ stop_id: p.id, seq: paso.seq, prog: paso.prog });
+    }
     paradaFilas.push({
       id: p.id,
       nombre: p.n,
@@ -384,11 +359,18 @@ async function subirCentro() {
     });
   }
 
+  const { patronFilas, patronParadaFilas, viajeFilas, tuplas } = aPatrones(porViaje, tripRuta);
+
   const totalLineas = paradaFilas.reduce((n, p) => n + p.lineas.length, 0);
   console.log(
-    `  ${paradaFilas.length} paradas con horario, ${horarioFilas.length} filas de horario, ` +
+    `  ${paradaFilas.length} paradas con horario, ` +
       `${(totalLineas / (paradaFilas.length || 1)).toFixed(1)} líneas/parada de media.` +
       (sinFichero ? `  (${sinFichero} sin fichero en el índice, saltadas)` : ""),
+  );
+  console.log(
+    `  ${tuplas} paradas-por-viaje -> ${viajeFilas.length} viajes en ` +
+      `${patronFilas.length} patrones (${patronParadaFilas.length} filas de recorrido). ` +
+      `${(tuplas / (patronParadaFilas.length || 1)).toFixed(1)}x menos que una fila por parada y viaje.`,
   );
 
   if (SECO) {
@@ -396,16 +378,104 @@ async function subirCentro() {
     return;
   }
 
+  // Marca de esta carga. Va en cada viaje que se sube y al final sirve para
+  // barrer los de la carga anterior: el upsert añade y actualiza, pero no borra.
+  const cargado = new Date().toISOString();
+  for (const v of viajeFilas) v.cargado = cargado;
+
   await subirRutas();
-  process.stdout.write("  subiendo horario...");
-  await upsertLotes("horario", "stop_id,trip_id", horarioFilas);
+  // Orden obligatorio: el patrón antes que sus paradas y que los viajes, porque
+  // las dos tablas lo referencian con una FK.
+  process.stdout.write("  subiendo patrones...");
+  await upsertLotes("patron", "id", patronFilas);
+  process.stdout.write(" hecho\n  subiendo recorridos...");
+  await upsertLotes("patron_parada", "patron,orden", patronParadaFilas);
+  process.stdout.write(" hecho\n  subiendo viajes...");
+  await upsertLotes("viaje", "trip_id", viajeFilas);
   process.stdout.write(" hecho\n  subiendo paradas...");
   await upsertLotes("parada", "id", paradaFilas);
-  process.stdout.write(" hecho\n");
+  process.stdout.write(" hecho\n  limpiando la carga anterior...");
+  const limpieza = await limpiarHorario(cargado);
+  process.stdout.write(` hecho (${limpieza})\n`);
+
   console.log(
-    `\nAlta completa: ${paradaFilas.length} paradas en vivo en el centro.\n` +
+    `\nAlta completa: ${paradaFilas.length} paradas en vivo.\n` +
       "La Edge Function las recogerá en la próxima pasada del cron (cada minuto).",
   );
+}
+
+/**
+ * Agrupa los viajes en patrones de recorrido.
+ *
+ * Un viaje es "el patrón P saliendo en el segundo S". Medido sobre las 658
+ * paradas del centro, 72.593 viajes caben en 7.364 patrones: el mismo recorrido
+ * se repite cada pocos minutos y sólo cambia la hora de salida. Eso es lo que
+ * hace que quepa el núcleo entero en el plan gratuito.
+ *
+ * El id del patrón es el md5 de su contenido, no un contador, para que la
+ * subida siga siendo idempotente: repetir la carga da los mismos ids y el
+ * upsert no duplica nada. La misma fórmula está en la migración
+ * `20260917120000_horario_por_patron.sql`; si cambia una hay que cambiar las dos.
+ */
+function aPatrones(porViaje, tripRuta) {
+  const patrones = new Map();
+  const viajeFilas = [];
+  let tuplas = 0;
+
+  for (const [tripId, pasos] of porViaje) {
+    pasos.sort((a, b) => a.seq - b.seq);
+    tuplas += pasos.length;
+    // El desfase se mide contra la PRIMERA parada por `seq`, no contra el
+    // `prog` mínimo: es lo que significa "sale".
+    const sale = pasos[0].prog;
+    const texto = pasos.map((p) => `${p.stop_id}:${p.seq}:${p.prog - sale}`).join(",");
+    const id = idPatron(texto);
+
+    if (!patrones.has(id)) {
+      patrones.set(id, pasos.map((p, i) => ({
+        patron: id,
+        orden: i,
+        stop_id: p.stop_id,
+        seq: p.seq,
+        desfase: p.prog - sale,
+      })));
+    }
+    viajeFilas.push({
+      trip_id: tripId,
+      patron: id,
+      sale,
+      route_id: tripRuta[tripId] ?? null,
+    });
+  }
+
+  const patronParadaFilas = [];
+  for (const filas of patrones.values()) patronParadaFilas.push(...filas);
+
+  return {
+    patronFilas: [...patrones].map(([id, filas]) => ({ id, paradas: filas.length })),
+    patronParadaFilas,
+    viajeFilas,
+    tuplas,
+  };
+}
+
+/** Barre los viajes de la carga anterior y los patrones que quedan huérfanos. */
+async function limpiarHorario(desde) {
+  const res = await fetch(`${URL_BASE}/rest/v1/rpc/limpiar_horario`, {
+    method: "POST",
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ p_desde: desde }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) {
+    throw new Error(`limpiar_horario: HTTP ${res.status} — ${(await res.text()).slice(0, 300)}`);
+  }
+  const r = await res.json();
+  return `${r.viajes_borrados} viajes, ${r.patrones_borrados} patrones`;
 }
 
 /**
@@ -440,16 +510,12 @@ async function subirRutas() {
 
 // --- Main -------------------------------------------------------------------
 
-if (CENTRO) {
+if (CENTRO || NUCLEO) {
   await subirCentro();
   process.exit(0);
 }
 
-if (HORARIO) {
-  const paradas = args.filter((a) => /^[0-9]{4}[A-Z]{2}/i.test(a));
-  await subirHorario(paradas);
-  process.exit(0);
-}
+if (HORARIO) avisarHorarioRetirado();
 
 const fs_ = ficheros();
 if (!fs_.length) {

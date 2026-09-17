@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { estadoParada } from "./gtfsrt.mjs";
+import { idPatron } from "./patron.mjs";
 
 const SNAPSHOT = "./snapshots/feed-1.json";
 const ORIGEN = "./scripts/gtfsrt.mjs";
@@ -180,6 +181,40 @@ if (!fs.existsSync(SNAPSHOT)) {
     fallos++;
   }
   if (excepciones) fallos++;
+}
+
+// --- 6. El id de patrón de Node vale lo mismo que el de SQL -----------------
+//
+// La fórmula está duplicada: en `scripts/patron.mjs` para la subida y en SQL
+// dentro de la migración que rellenó la tabla. Si divergen, `sincronizar.mjs`
+// calcularía ids nuevos para patrones que ya existen y la siguiente carga
+// duplicaría el horario entero en vez de reescribirlo — y en silencio, porque
+// el upsert no se queja.
+//
+// Los casos son patrones REALES: el texto y el id salieron de `viaje` y
+// `patron_parada` con la fórmula de Postgres, no de correr este mismo código.
+console.log("\n6. El id de patrón coincide con el que calculó SQL");
+{
+  const casos = [
+    ["169631651733316633", "8220B1351201:1:0,8220B1351401:2:120,8220B1351001:3:360,8220B1354001:4:780"],
+    ["173908849935241047", "8220B1351201:1:0,8220B1351401:2:120,8220B1351001:3:420,8220B1354001:4:900"],
+    ["100145238504564061", "8220B1351201:1:0,8220B1351401:2:120,8220B1351001:3:660,8220B1354001:4:1260"],
+    ["309666774760806993", "8220DB004413:28:0,8220DB000316:29:660,8220DB002499:30:1020,8220DB005140:31:1260"],
+  ];
+  for (const [esperado, texto] of casos) {
+    const obtenido = idPatron(texto);
+    if (obtenido === esperado) {
+      console.log(`  ok   ${esperado}`);
+    } else {
+      console.log(`FALLO  esperaba ${esperado}, he calculado ${obtenido}`);
+      fallos++;
+    }
+  }
+  // Y que siga siendo texto: en number, 60 bits se redondean.
+  if (typeof idPatron("x") !== "string") {
+    console.log("FALLO  idPatron debe devolver texto, no number (60 bits no caben en 53)");
+    fallos++;
+  }
 }
 
 console.log(fallos ? `\n${fallos} FALLOS\n` : "\nTodo correcto\n");
