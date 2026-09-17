@@ -627,6 +627,32 @@ export class App implements OnDestroy {
     this.topeMapa.set(false);
   }
 
+  /**
+   * Del recorrido vertical al mapa, con la línea ya resaltada.
+   *
+   * El camino sólo iba en un sentido: del mapa se entraba a las paradas, pero
+   * de las paradas no se volvía al trazado sin salir al catálogo y elegir otra
+   * vez la línea. Parecía que el mapa había desaparecido.
+   *
+   * Hay que esperar a la geometría antes de elegir: si se acaba de entrar por
+   * aquí, `trazados` todavía no está y `alternarLineaMapa` no haría nada.
+   */
+  async verEnMapa(linea: string): Promise<void> {
+    this.cerrarLinea();
+    this.verVistaLineas('mapa');
+    await this.cargarTrazados();
+    if (!this.hayTrazado(linea) || this.colorDeLinea(linea)) return;
+
+    const huecos = [...this.huecosMapa()];
+    const libre = huecos.indexOf(null);
+    // Con los seis ocupados se pisa el último en vez de avisar del tope: quien
+    // pulsa "ver en el mapa" ha pedido ESTA línea, y llegar al mapa sin ella
+    // es el mismo desconcierto que veníamos a arreglar.
+    huecos[libre >= 0 ? libre : huecos.length - 1] = linea;
+    this.huecosMapa.set(huecos);
+    this.topeMapa.set(false);
+  }
+
   verBuscar(): void {
     this.cerrarLinea();
     this.modo.set('buscar');

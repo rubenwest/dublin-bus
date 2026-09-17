@@ -119,6 +119,14 @@ naranja contradice su nombre.
   maraña de hilos blancos sobre la oscura. La referencia para calibrarlo no es
   el fondo sino las autopistas del basemap: si la M50 pesa más que la red, la
   jerarquía está del revés.
+- **El camino va en los dos sentidos.** Del mapa se entra a las paradas de una
+  línea ("Ver paradas ›") y de la cabecera de la línea se vuelve al mapa con
+  ella ya resaltada ("Ver el recorrido en el mapa"). Al principio sólo iba de
+  ida, y desde el recorrido vertical parecía que el mapa hubiera desaparecido:
+  había que salir al catálogo y elegir la línea otra vez. Con los seis huecos
+  ocupados ese enlace **pisa el último** en vez de avisar del tope; quien lo
+  pulsa ha pedido esa línea, y llegar al mapa sin ella es el desconcierto que
+  se venía a arreglar.
 - **En el móvil el mapa arranca bloqueado** y hay un botón para soltarlo. El
   otro mapa simplemente desactiva el arrastre (`dragging: !L.Browser.mobile`)
   porque es un mapa pequeño de una parada; aquí no poder mover el mapa lo deja

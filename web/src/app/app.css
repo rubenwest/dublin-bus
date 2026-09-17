@@ -517,6 +517,18 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: 3px 3px 0 var(--har
 .vista.activo { background: var(--acento); color: var(--acento-texto); }
 .vista:active:not(:disabled) { transform: none; box-shadow: none; }
 
+/* El enlace al mapa va dentro de la cabecera de la línea, pegado al subtítulo:
+   es una salida lateral, no la acción principal de la pantalla. */
+.linea-cabecera .enlace {
+  /* `.enlace` trae `min-height: 0` porque nació para un "ver todas" metido en
+     una frase. Este se toca para navegar, así que se le da alto con padding
+     hasta una zona cómoda; los 44 px enteros abrirían un hueco que no pega en
+     una cabecera. El padding izquierdo se anula para que alinee con el título. */
+  margin-top: -0.15rem;
+  padding: 0.6rem 0.6rem 0.6rem 0;
+  font-size: 0.82rem;
+}
+
 .red { margin-top: 1rem; }
 .red app-mapa-lineas { display: block; }
 

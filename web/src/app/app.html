@@ -90,6 +90,10 @@
             <div>
               <h2>{{ t('linea_titulo', { linea: lineaActiva()! }) }}</h2>
               <p class="tenue">{{ t('linea_paradas') }}</p>
+              <button type="button" class="enlace" data-test="ver-en-mapa"
+                (click)="verEnMapa(lineaActiva()!)">
+                {{ t('ver_en_mapa') }}
+              </button>
             </div>
           </div>
           <p class="ayuda-linea">{{ t('toca_parada') }}</p>
