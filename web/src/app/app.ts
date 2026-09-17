@@ -1,7 +1,17 @@
 import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { SwUpdate } from '@angular/service-worker';
-import { Api, Fiabilidad, Llegada, Llegadas, Parada, SentidoLinea, Vehiculo } from './api';
+import {
+  Api,
+  Fiabilidad,
+  Llegada,
+  Llegadas,
+  Parada,
+  SentidoLinea,
+  TrazadosLinea,
+  Vehiculo,
+} from './api';
 import { BusEnMapa, Mapa } from './mapa';
+import { MapaLineas, TrazadoLinea } from './mapa-lineas';
 import { entorno } from './entorno';
 import { Idioma, traducir } from './i18n';
 
@@ -13,6 +23,25 @@ const CLAVE_LINEAS = 'dublin-bus.lineas';
 const CLAVE_FAV = 'dublin-bus.favoritas';
 const CLAVE_IDIOMA = 'dublin-bus.idioma';
 const CLAVE_MAPA = 'dublin-bus.mapa';
+const CLAVE_VISTA_LINEAS = 'dublin-bus.vista-lineas';
+
+/**
+ * Los colores del mapa de la red, y son seis a propósito.
+ *
+ * El color es de la selección, no de la línea: 154 líneas no admiten 154
+ * colores que alguien pueda separar de un vistazo, pero seis sobre una red en
+ * gris se leen sin esfuerzo. Seis es además donde está el límite de verdad —
+ * con ocho ya hay dos que discuten—, así que el tope de la selección no es una
+ * limitación técnica sino la misma razón.
+ *
+ * Ni rojo ni verde puros: los tiene la Luas y ahí el color es parte del nombre
+ * de la línea. Ver COLOR_FIJO.
+ */
+const PALETA_MAPA = ['#1f6feb', '#e8590c', '#9c36b5', '#0c8599', '#c2255c', '#b8860b'];
+
+/** Las dos líneas que ya vienen con color puesto. Dibujar la Red en naranja
+ *  sería contradecir su propio nombre. */
+const COLOR_FIJO: Record<string, string> = { Red: '#e23b3b', Green: '#16b34a' };
 
 /**
  * Por encima de esto la lista plana no se enseña entera: hay que buscar. Con
@@ -70,7 +99,7 @@ function rumboGrados(lat1: number, lon1: number, lat2: number, lon2: number): nu
   selector: 'app-root',
   templateUrl: './app.html',
   styleUrl: './app.css',
-  imports: [Mapa],
+  imports: [Mapa, MapaLineas],
 })
 export class App implements OnDestroy {
   private api = inject(Api);
@@ -130,6 +159,25 @@ export class App implements OnDestroy {
   readonly sentidoActivo = signal(0);
   readonly cargandoLinea = signal(false);
   readonly errorLinea = signal<string | null>(null);
+
+  /**
+   * El explorador enseña la misma línea de dos maneras: la lista de chips de
+   * siempre y el mapa de la red. Se recuerda la elección porque quien ha
+   * venido a mirar la red va a volver a mirarla.
+   */
+  readonly vistaLineas = signal<'lista' | 'mapa'>(this.vistaLineasGuardada());
+  /** La geometría de `trazados-linea.json`. Se pide al abrir el mapa, no antes. */
+  readonly trazados = signal<TrazadosLinea | null>(null);
+  readonly cargandoRed = signal(false);
+  readonly errorRed = signal<string | null>(null);
+  /**
+   * La selección del mapa, por huecos de color. Un array de posiciones fijas y
+   * no una lista: si fuera una lista, quitar la primera línea le cambiaría el
+   * color a todas las demás justo cuando el usuario las está comparando.
+   */
+  readonly huecosMapa = signal<(string | null)[]>(PALETA_MAPA.map(() => null));
+  /** Se ha intentado elegir una séptima línea. Se avisa en vez de no hacer nada. */
+  readonly topeMapa = signal(false);
 
   /** Idioma de la interfaz. Se cambia en caliente desde las banderas de arriba. */
   readonly lang = signal<Idioma>(this.idiomaInicial());
@@ -233,12 +281,69 @@ export class App implements OnDestroy {
   );
 
   /** Catálogo único de líneas presentes en las paradas que ya tienen tiempos. */
+  readonly lineasTodas = computed(() =>
+    [...new Set(this.paradas().flatMap((p) => p.lineas))].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true }),
+    ),
+  );
+
+  /** El catálogo recortado por lo que se haya escrito en el buscador. */
   readonly lineasCatalogo = computed(() => {
     const q = normaliza(this.busquedaLinea().trim());
-    const todas = [...new Set(this.paradas().flatMap((p) => p.lineas))].sort((a, b) =>
-      a.localeCompare(b, undefined, { numeric: true }),
-    );
+    const todas = this.lineasTodas();
     return q ? todas.filter((linea) => normaliza(linea).includes(q)) : todas;
+  });
+
+  // --- Mapa de la red -------------------------------------------------------
+
+  /** Las líneas elegidas en el mapa, en el orden de sus huecos de color. */
+  readonly lineasMapa = computed(() =>
+    this.huecosMapa().filter((l): l is string => l !== null),
+  );
+
+  /**
+   * La geometría que se le da al mapa: TODAS las líneas del catálogo que la
+   * tengan. Las no elegidas no se quitan —se pintan en gris— porque son las
+   * que dan la forma de la red y son también lo que se puede tocar para
+   * elegirlas.
+   *
+   * No depende de la selección a propósito: así el mapa construye sus
+   * polilíneas una vez y elegir una línea sólo les cambia el estilo.
+   */
+  readonly trazadosMapa = computed<TrazadoLinea[]>(() => {
+    const geo = this.trazados();
+    if (!geo) return [];
+    return this.lineasTodas().flatMap((linea) => {
+      const trazos = geo[linea];
+      return trazos?.length ? [{ linea, trazos }] : [];
+    });
+  });
+
+  /** El color de cada línea elegida, que es lo único que cambia al tocar. */
+  readonly coloresMapa = computed<Record<string, string>>(() => {
+    const colores: Record<string, string> = {};
+    this.huecosMapa().forEach((linea, hueco) => {
+      if (linea) colores[linea] = COLOR_FIJO[linea] ?? PALETA_MAPA[hueco];
+    });
+    return colores;
+  });
+
+  /**
+   * Los chips de la leyenda. Las elegidas van primero y siempre, aunque el
+   * buscador las excluya: si no, escribir "39" después de elegir el 14 dejaba
+   * el 14 pintado en el mapa y sin manera de soltarlo.
+   */
+  readonly leyendaMapa = computed(() => {
+    const elegidas = this.lineasMapa();
+    const resto = this.lineasCatalogo().filter((l) => !elegidas.includes(l));
+    return [...elegidas, ...resto];
+  });
+
+  /** Cuántas del catálogo se quedan fuera del mapa por no tener trazado. */
+  readonly lineasSinTrazado = computed(() => {
+    const geo = this.trazados();
+    if (!geo) return 0;
+    return this.lineasTodas().filter((l) => !geo[l]?.length).length;
   });
 
   /** Los ids del recorrido se enlazan con el catálogo cargado y seleccionable. */
@@ -445,6 +550,81 @@ export class App implements OnDestroy {
 
   verLineas(): void {
     this.modo.set('lineas');
+    if (this.vistaLineas() === 'mapa') void this.cargarTrazados();
+  }
+
+  /** Cambia entre la lista de chips y el mapa de la red. */
+  verVistaLineas(vista: 'lista' | 'mapa'): void {
+    this.vistaLineas.set(vista);
+    try {
+      localStorage.setItem(CLAVE_VISTA_LINEAS, vista);
+    } catch {
+      /* modo privado: se vuelve a elegir la próxima vez */
+    }
+    if (vista === 'mapa') void this.cargarTrazados();
+  }
+
+  private vistaLineasGuardada(): 'lista' | 'mapa' {
+    try {
+      return localStorage.getItem(CLAVE_VISTA_LINEAS) === 'mapa' ? 'mapa' : 'lista';
+    } catch {
+      return 'lista';
+    }
+  }
+
+  /**
+   * Trae la geometría la primera vez que hace falta. Son 800 KB: el que entra a
+   * mirar los minutos de su parada no los paga, y el que abre el mapa los paga
+   * una vez porque la promesa se queda cacheada en `Api`.
+   */
+  private async cargarTrazados(): Promise<void> {
+    if (this.trazados() || this.cargandoRed()) return;
+    this.errorRed.set(null);
+    this.cargandoRed.set(true);
+    try {
+      this.trazados.set(await this.api.trazados());
+    } catch {
+      this.errorRed.set(this.t('err_cargar_red'));
+    } finally {
+      this.cargandoRed.set(false);
+    }
+  }
+
+  /** El color con el que se pinta una línea, o `null` si no está elegida. */
+  colorDeLinea(linea: string): string | null {
+    return this.coloresMapa()[linea] ?? null;
+  }
+
+  /** Una línea del catálogo sin trazado no se puede pintar; el chip se apaga. */
+  hayTrazado(linea: string): boolean {
+    return !!this.trazados()?.[linea]?.length;
+  }
+
+  /**
+   * Elige o suelta una línea en el mapa. Al soltarla su hueco de color queda
+   * libre y las demás no se mueven, que es lo que se está comparando.
+   */
+  alternarLineaMapa(linea: string): void {
+    if (!this.hayTrazado(linea)) return;
+    const huecos = [...this.huecosMapa()];
+    const puesto = huecos.indexOf(linea);
+    if (puesto >= 0) {
+      huecos[puesto] = null;
+      this.topeMapa.set(false);
+    } else {
+      const libre = huecos.indexOf(null);
+      if (libre < 0) {
+        this.topeMapa.set(true);
+        return;
+      }
+      huecos[libre] = linea;
+    }
+    this.huecosMapa.set(huecos);
+  }
+
+  limpiarMapa(): void {
+    this.huecosMapa.set(PALETA_MAPA.map(() => null));
+    this.topeMapa.set(false);
   }
 
   verBuscar(): void {
