@@ -838,6 +838,31 @@ excepciones son las paradas de `recolectar` que caen fuera de la caja: dejarlas
 sin horario corta la serie histórica, que es lo único que no se puede
 reconstruir después.
 
+## El estático caduca y nadie avisa (2026-09-30)
+
+Del 20 al 30 de septiembre solo 493 de 1.968 paradas tuvieron llegadas: el
+Luas y Go-Ahead sí, Dublin Bus entero no. El horario cargado era del estático
+del 16 y los `trip_id` de Dublin Bus cambiaron el día 20, así que sus viajes
+del feed no encontraban horario y se descartaban. **La función devolvió 200 en
+todas las pasadas**; se supo porque un usuario vio "Sin llegadas" en varias
+paradas. Las dos paradas de histórico del centro tienen un hueco de diez días
+en `serie` que no se recupera.
+
+La cura es la carga de siempre con el estático nuevo (`indexar`,
+`sincronizar --nucleo`, `trazados`, `codigos-parada`). Tras ella, 1.961 de
+1.971.
+
+Para que no vuelva a pasar en silencio está `vigilar_llegadas()`, con su cron
+`vigilar-llegadas` cada 10 minutos. Mira el resultado, no el código de estado,
+y manda un correo por Resend (mismo patrón que `avisar_feedback`) si:
+
+- `llegada_actual` lleva más de 15 min sin reescribirse, a cualquier hora; o
+- menos de la mitad de las paradas `en_vivo` tienen llegadas, **solo de 8 a
+  20 h de Dublín**: de madrugada eso es lo normal y avisaría todas las noches.
+
+Un correo por motivo cada 12 h; el estado (`alerta_estado`) se borra al
+recuperarse. `select vigilar_llegadas(1.01)` fuerza el aviso para probarlo.
+
 ## Supabase
 
 Proyecto `dublin-bus`, región `eu-west-1` (Irlanda), plan gratuito.
