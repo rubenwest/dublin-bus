@@ -92,11 +92,17 @@ async function main() {
 
   const rutas = {};
   // Aparte y no dentro de rutas.json, que lo leen varios scripts como
-  // route_id -> nombre corto y no tienen por qué enterarse.
-  const rutasLargo = {};
+  // route_id -> nombre corto y no tienen por qué enterarse. Es lo que el
+  // catálogo de líneas de la web enseña (recorrido) y usa para agruparlas
+  // (tipo de vehículo y operador).
+  const rutasInfo = {};
   for await (const r of filasCsv(path.join(gtfsDir, "routes.txt"))) {
     rutas[r.route_id] = r.route_short_name || r.route_long_name || r.route_id;
-    if (r.route_long_name) rutasLargo[r.route_id] = r.route_long_name;
+    rutasInfo[r.route_id] = {
+      largo: r.route_long_name || null,
+      tipo: r.route_type === "" || r.route_type == null ? null : Number(r.route_type),
+      agencia: r.agency_id || null,
+    };
   }
   console.log(`     ${paradas.size} paradas, ${Object.keys(rutas).length} rutas`);
 
@@ -154,7 +160,7 @@ async function main() {
     JSON.stringify(conServicio.map((p) => ({ id: p.id, n: p.nombre, lat: p.lat, lon: p.lon, t: p.trips }))),
   );
   fs.writeFileSync(path.join(indiceDir, "rutas.json"), JSON.stringify(rutas));
-  fs.writeFileSync(path.join(indiceDir, "rutas-largo.json"), JSON.stringify(rutasLargo));
+  fs.writeFileSync(path.join(indiceDir, "rutas-info.json"), JSON.stringify(rutasInfo));
   fs.writeFileSync(
     path.join(indiceDir, "trip-ruta.json"),
     JSON.stringify(Object.fromEntries(tripRuta)),

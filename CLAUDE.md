@@ -937,6 +937,40 @@ pide una vez por sesión, al entrar en Líneas, así que no merece una tabla.
 Tras cada estático, `sincronizar --nucleo` ya sube los nombres largos;
 `sincronizar --rutas` sube solo eso.
 
+**Grupos, favoritas y "cerca de ti"** (el mismo día). Sin nada escrito, la
+lista va en este orden:
+
+1. **Tus líneas**: las que tienen estrella. Se marcan en la fila o en la
+   cabecera de la línea, y se guardan en `localStorage`
+   (`dublin-bus.lineas-favoritas`), como las paradas favoritas.
+2. **Cerca de ti**: las líneas de las paradas a menos de 400 m, con dónde
+   cogerlas y a cuánto ("A 42 m, en O'Connell St Upr"), con un tope de 12. La
+   ubicación se pide al tocar el botón, nunca en frío; si ya se dio en otra
+   visita, llega sola, igual que en el radar.
+3. **Los grupos**: Luas, Tren, Frecuentes, Con número, Locales, Exprés e
+   Interurbanos. Una fila de chips arriba filtra por grupo.
+
+El grupo se decide en la web (`grupoDeLinea` en `app.ts`) con dos datos del
+GTFS que `linea_catalogo` expone, `tipo` (route_type) y `agencia`
+(agency_id), y para el bus urbano con el nombre, porque en BusConnects el
+nombre dice qué es cada línea. Las reglas, por orden:
+
+- tipo 0 → Luas; tipo 2 → Tren;
+- Bus Éireann (`2`, `WFRD`) o Go-Ahead de cercanías (`03C`) → Interurbanos.
+  Ojo: el Go-Ahead urbano es `3`, no `03C`;
+- `X`/`P` + número, o número + `X` (27X) → Exprés;
+- `L` + número → Locales;
+- letra `A`-`H`, `N`, `S` o `W` + número → Frecuentes (ejes y orbitales);
+- el resto → Con número.
+
+Con algo escrito, la lista es una sola, por relevancia y sin grupos: partirla
+pondría el 41C detrás de un Luas que casó por una parada. El chip de grupo
+sigue filtrando.
+
+Pendiente menor: Irish Rail usa `rail` como nombre corto en 16 rutas
+(Belfast, Drogheda, Maynooth…), y en el grupo Tren sale una línea llamada
+"rail".
+
 ## Supabase
 
 Proyecto `dublin-bus`, región `eu-west-1` (Irlanda), plan gratuito.
@@ -972,7 +1006,7 @@ permite "llegadas en vivo, anchas; histórico, estrecho".
 | `error_prediccion` | vista: cada predicción del feed contra lo que pasó |
 | `paso_predicho` | vista: una fila por AUTOBÚS, no por predicción. Ver abajo |
 | `fiabilidad` | vista: sesgo por parada, línea y franja horaria, con su `n` |
-| `linea_catalogo` | vista: una fila por línea con su recorrido (`route_long_name`) |
+| `linea_catalogo` | vista: una fila por línea con su recorrido, `tipo` y `agencia` del GTFS |
 | `vehiculo` | posiciones GPS, ~800 filas reescritas cada minuto. NO crece |
 | `feedback` | mensajes del formulario. INSERT anónimo; lectura solo `service_role` |
 

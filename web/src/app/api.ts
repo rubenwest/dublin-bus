@@ -22,6 +22,16 @@ export interface Llegada {
   vehiculo: string | null;
 }
 
+/** Una línea del catálogo, tal como la describe el GTFS. */
+export interface InfoLinea {
+  /** route_long_name: "Swords Manor Via River Valley - Lower Abbey St". */
+  recorrido: string;
+  /** route_type: 0 tranvía, 2 tren, 3 autobús. */
+  tipo: number | null;
+  /** agency_id: "1" Dublin Bus, "3" Go-Ahead, "2" Bus Éireann, "IR" Irish Rail… */
+  agencia: string | null;
+}
+
 export interface Parada {
   id: string;
   /** Código corto que se ve en Google Maps y en la marquesina (p. ej. 998013). */
@@ -125,7 +135,7 @@ export class Api {
   private recorridos = new Map<string, Promise<SentidoLinea[]>>();
   private fiabilidades = new Map<string, Promise<Fiabilidad[]>>();
   private trazadosLinea: Promise<TrazadosLinea> | null = null;
-  private recorridosCatalogo: Promise<Record<string, string>> | null = null;
+  private infoCatalogo: Promise<Record<string, InfoLinea>> | null = null;
 
   private get cabeceras() {
     return {
@@ -333,30 +343,38 @@ export class Api {
   }
 
   /**
-   * El recorrido de cada línea del catálogo ("Swords Manor Via River Valley -
-   * Lower Abbey St"), que es lo que deja elegir línea a quien no se sabe el
-   * número y buscar por sitio. Sale de `route_long_name` del GTFS a través de
-   * la vista `linea_catalogo`. Son ~200 filas, una petición, y se cachea para
-   * toda la sesión: no cambian hasta el siguiente estático.
+   * Lo que se sabe de cada línea del catálogo: su recorrido ("Swords Manor Via
+   * River Valley - Lower Abbey St"), que deja elegir línea a quien no se sabe
+   * el número y buscar por sitio, y el tipo de vehículo y el operador, con los
+   * que se agrupan. Sale del GTFS a través de la vista `linea_catalogo`. Son
+   * ~200 filas, una petición, y se cachea para toda la sesión: no cambian
+   * hasta el siguiente estático.
    */
-  recorridosLineas(): Promise<Record<string, string>> {
-    if (!this.recorridosCatalogo) {
-      this.recorridosCatalogo = this.leer(
-        this.http.get<{ linea: string; recorrido: string }[]>(
+  infoLineas(): Promise<Record<string, InfoLinea>> {
+    if (!this.infoCatalogo) {
+      this.infoCatalogo = this.leer(
+        this.http.get<({ linea: string } & InfoLinea)[]>(
           `${entorno.supabaseUrl}/rest/v1/linea_catalogo`,
           {
             headers: { ...this.cabeceras, Range: '0-999' },
-            params: { select: 'linea,recorrido' },
+            params: { select: 'linea,recorrido,tipo,agencia' },
           },
         ),
       )
-        .then((filas) => Object.fromEntries(filas.map((f) => [f.linea, f.recorrido])))
+        .then((filas) =>
+          Object.fromEntries(
+            filas.map(({ linea, recorrido, tipo, agencia }) => [
+              linea,
+              { recorrido, tipo, agencia },
+            ]),
+          ),
+        )
         .catch((error) => {
-          this.recorridosCatalogo = null;
+          this.infoCatalogo = null;
           throw error;
         });
     }
-    return this.recorridosCatalogo;
+    return this.infoCatalogo;
   }
 
   /**

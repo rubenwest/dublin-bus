@@ -1,8 +1,10 @@
 import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { SwUpdate } from '@angular/service-worker';
 import {
   Api,
   Fiabilidad,
+  InfoLinea,
   Llegada,
   Llegadas,
   Parada,
@@ -15,6 +17,12 @@ import { MapaLineas, TrazadoLinea } from './mapa-lineas';
 import { entorno } from './entorno';
 import { Idioma, traducir } from './i18n';
 
+/** Una fila del catálogo de líneas: la línea y, si hace falta, por qué sale. */
+interface FilaLinea {
+  linea: string;
+  nota: string | null;
+}
+
 /** Estado del envío de feedback, para no repetir strings sueltos por ahí. */
 type EnvioFeedback = 'inactivo' | 'enviando' | 'enviado' | 'error';
 
@@ -24,6 +32,8 @@ const CLAVE_FAV = 'dublin-bus.favoritas';
 const CLAVE_IDIOMA = 'dublin-bus.idioma';
 const CLAVE_MAPA = 'dublin-bus.mapa';
 const CLAVE_VISTA_LINEAS = 'dublin-bus.vista-lineas';
+/** Las líneas con estrella. No confundir con CLAVE_LINEAS, que es el filtro de una parada. */
+const CLAVE_LINEAS_FAV = 'dublin-bus.lineas-favoritas';
 
 /**
  * Los colores del mapa de la red, y son seis a propósito.
@@ -84,6 +94,60 @@ const RADAR_CERCANAS = 6;
 /** Radio del área del radar en el SVG (viewBox 300, centro 150). */
 const RADAR_MAX_R = 118;
 
+/**
+ * Cómo se reparte el catálogo de líneas, en el orden en que se enseña. Con
+ * 200 líneas en una sola lista no se encuentra nada; con grupos que la gente
+ * ya conoce (el Luas, el DART, "los de letra") se va directo a lo suyo.
+ */
+export type GrupoLinea =
+  | 'luas'
+  | 'tren'
+  | 'frecuente'
+  | 'numero'
+  | 'local'
+  | 'expres'
+  | 'interurbano';
+
+const GRUPOS_LINEA: GrupoLinea[] = [
+  'luas',
+  'tren',
+  'frecuente',
+  'numero',
+  'local',
+  'expres',
+  'interurbano',
+];
+
+/**
+ * Operadores cuyas líneas salen de Dublín: Bus Éireann (también la filial de
+ * Waterford, que entra con el W2/W4) y Go-Ahead de cercanías ("03C",
+ * Edenderry, Naas…), que no es el Go-Ahead urbano ("3").
+ */
+const AGENCIAS_INTERURBANAS = new Set(['2', '03C', 'WFRD']);
+
+/**
+ * El grupo de una línea. Primero el vehículo y el operador, que son datos del
+ * GTFS; luego, para el bus urbano, el nombre, que en BusConnects sí dice qué
+ * es cada línea: letra + número (C1, E2, N4, S2, W6) son los ejes y orbitales
+ * de alta frecuencia, L las locales, y X / P o la X final (27X, 33X) las de
+ * hora punta. Sin datos del GTFS (si su petición falla) se tira solo del
+ * nombre, y lo que no se reconoce va a "con número", que es lo más común.
+ */
+function grupoDeLinea(linea: string, info: InfoLinea | undefined): GrupoLinea {
+  if (info?.tipo === 0 || linea === 'Red' || linea === 'Green') return 'luas';
+  if (info?.tipo === 2) return 'tren';
+  if (info?.agencia && AGENCIAS_INTERURBANAS.has(info.agencia)) return 'interurbano';
+  if (/^[XP]\d/.test(linea) || /^\d+X$/.test(linea)) return 'expres';
+  if (/^L\d/.test(linea)) return 'local';
+  if (/^[A-HNSW]\d+$/.test(linea)) return 'frecuente';
+  return 'numero';
+}
+
+/** Paradas a menos de esto cuentan para "líneas cerca de ti": unos cinco minutos andando. */
+const RADIO_LINEAS_CERCA = 400;
+/** Tope de líneas en "cerca de ti". En pleno centro pasan sesenta. */
+const MAX_LINEAS_CERCA = 12;
+
 /** Distancia en metros entre dos puntos (haversine). */
 function distanciaMetros(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6_371_000;
@@ -111,7 +175,7 @@ function rumboGrados(lat1: number, lon1: number, lat2: number, lon2: number): nu
   selector: 'app-root',
   templateUrl: './app.html',
   styleUrl: './app.css',
-  imports: [Mapa, MapaLineas],
+  imports: [Mapa, MapaLineas, NgTemplateOutlet],
 })
 export class App implements OnDestroy {
   private api = inject(Api);
@@ -301,10 +365,17 @@ export class App implements OnDestroy {
 
   /**
    * Para cada línea, su recorrido ("Swords Manor Via River Valley - Lower
-   * Abbey St"). Se pide al entrar en Líneas; hasta que llega, la lista sale
-   * con los números solos y se puede buscar por número igual que antes.
+   * Abbey St"), tipo de vehículo y operador. Se pide al entrar en Líneas;
+   * hasta que llega, la lista sale con los números solos, agrupada solo por
+   * el nombre, y se puede buscar por número igual que antes.
    */
-  readonly recorridos = signal<Record<string, string>>({});
+  readonly infoLineas = signal<Record<string, InfoLinea>>({});
+
+  /** El grupo que se está mirando en la lista de líneas, o todas. */
+  readonly filtroGrupo = signal<GrupoLinea | 'todas'>('todas');
+
+  /** Las líneas con estrella, en el orden en que se marcaron. */
+  readonly lineasFavoritas = signal<string[]>(this.lineasFavoritasGuardadas());
 
   /**
    * Las líneas que casan con lo escrito, y por qué. Un chip "41C" pelado no le
@@ -342,9 +413,9 @@ export class App implements OnDestroy {
     // en cada "Street"): el recorrido y las paradas solo a partir de tres.
     if (q.length < 3) return motivo;
 
-    const recorridos = this.recorridos();
+    const info = this.infoLineas();
     for (const l of todas) {
-      if (!motivo.has(l) && normaliza(recorridos[l] ?? '').includes(q)) motivo.set(l, null);
+      if (!motivo.has(l) && normaliza(info[l]?.recorrido ?? '').includes(q)) motivo.set(l, null);
     }
 
     const porParada = new Map<string, string>();
@@ -364,15 +435,132 @@ export class App implements OnDestroy {
   /** El catálogo recortado por lo que se haya escrito en el buscador. */
   readonly lineasCatalogo = computed(() => [...this.coincidenciasLinea().keys()]);
 
-  /** Lo mismo, como filas de la lista: la línea y, si casó por parada, cuál. */
-  readonly filasLineas = computed(() =>
-    [...this.coincidenciasLinea()].map(([linea, parada]) => ({ linea, parada })),
+  /** El grupo de cada línea del catálogo. */
+  readonly grupoLinea = computed(() => {
+    const info = this.infoLineas();
+    return new Map(this.lineasTodas().map((l) => [l, grupoDeLinea(l, info[l])]));
+  });
+
+  /** Los grupos que tienen alguna línea, para no ofrecer chips que llevan a nada. */
+  readonly gruposPresentes = computed(() => {
+    const presentes = new Set(this.grupoLinea().values());
+    return GRUPOS_LINEA.filter((g) => presentes.has(g));
+  });
+
+  private enFiltro(linea: string): boolean {
+    const f = this.filtroGrupo();
+    return f === 'todas' || this.grupoLinea().get(linea) === f;
+  }
+
+  /**
+   * Con algo escrito, la lista es una sola, por orden de relevancia: partirla
+   * en grupos pondría el 41C detrás de un Luas que casó por una parada. Si
+   * casó por parada, la fila dice cuál.
+   */
+  readonly filasBusqueda = computed<FilaLinea[]>(() =>
+    [...this.coincidenciasLinea()]
+      .filter(([linea]) => this.enFiltro(linea))
+      .map(([linea, parada]) => ({
+        linea,
+        nota: parada ? this.t('para_en', { parada }) : null,
+      })),
   );
+
+  /** Sin nada escrito, el catálogo partido en grupos con su título. */
+  readonly seccionesLineas = computed(() => {
+    const grupos = this.grupoLinea();
+    return this.gruposPresentes()
+      .filter((g) => this.filtroGrupo() === 'todas' || this.filtroGrupo() === g)
+      .map((grupo) => ({
+        grupo,
+        filas: this.lineasTodas()
+          .filter((l) => grupos.get(l) === grupo)
+          .map((linea): FilaLinea => ({ linea, nota: null })),
+      }));
+  });
+
+  /**
+   * "Tus líneas" y "Cerca de ti" van encima de los grupos y solo con la lista
+   * entera a la vista: con un filtro o una búsqueda, quien mira ya ha dicho
+   * qué quiere.
+   */
+  readonly listaLineasEntera = computed(
+    () => !this.busquedaLinea().trim() && this.filtroGrupo() === 'todas',
+  );
+
+  /** Las líneas con estrella que siguen en el catálogo (un estático nuevo puede quitar alguna). */
+  readonly filasFavoritas = computed<FilaLinea[]>(() => {
+    const catalogo = new Set(this.lineasTodas());
+    return this.lineasFavoritas()
+      .filter((l) => catalogo.has(l))
+      .map((linea) => ({ linea, nota: null }));
+  });
+
+  /**
+   * Las líneas que pasan por paradas a menos de RADIO_LINEAS_CERCA, de la
+   * parada más cercana hacia fuera, con dónde cogerla y a cuánto. Es la
+   * pregunta de quien abre el catálogo sin saber el número: "¿qué me sirve
+   * desde aquí?".
+   */
+  readonly filasCerca = computed<FilaLinea[]>(() => {
+    const u = this.ubicacion();
+    if (!u) return [];
+    const cercanas = this.paradas()
+      .filter((p) => p.lat != null && p.lon != null)
+      .map((p) => ({ p, metros: distanciaMetros(u.lat, u.lon, p.lat!, p.lon!) }))
+      .filter((c) => c.metros <= RADIO_LINEAS_CERCA)
+      .sort((a, b) => a.metros - b.metros);
+    const filas: FilaLinea[] = [];
+    const vistas = new Set<string>();
+    for (const { p, metros } of cercanas) {
+      for (const linea of p.lineas) {
+        if (vistas.has(linea)) continue;
+        vistas.add(linea);
+        filas.push({
+          linea,
+          nota: this.t('linea_cerca', { d: this.distanciaTexto(metros), parada: p.nombre }),
+        });
+      }
+    }
+    return filas.slice(0, MAX_LINEAS_CERCA);
+  });
+
+  elegirGrupo(grupo: GrupoLinea | 'todas'): void {
+    this.filtroGrupo.set(grupo);
+  }
 
   /** "Dundrum Luas Stn - Ardlea Rd (Beaumont)" -> con raya, que se lee como tramo. */
   recorridoDe(linea: string): string | null {
-    const r = this.recorridos()[linea];
+    const r = this.infoLineas()[linea]?.recorrido;
     return r ? r.replace(/\s+-\s+/g, ' – ') : null;
+  }
+
+  esLineaFavorita(linea: string): boolean {
+    return this.lineasFavoritas().includes(linea);
+  }
+
+  alternarLineaFavorita(linea: string, ev: Event): void {
+    ev.stopPropagation();
+    const actual = this.lineasFavoritas();
+    const nuevas = actual.includes(linea)
+      ? actual.filter((l) => l !== linea)
+      : [...actual, linea];
+    this.lineasFavoritas.set(nuevas);
+    try {
+      localStorage.setItem(CLAVE_LINEAS_FAV, JSON.stringify(nuevas));
+    } catch {
+      /* modo privado: la estrella dura lo que la pestaña */
+    }
+  }
+
+  private lineasFavoritasGuardadas(): string[] {
+    try {
+      const crudo = localStorage.getItem(CLAVE_LINEAS_FAV);
+      const leido = crudo ? JSON.parse(crudo) : null;
+      return Array.isArray(leido) ? leido.filter((x) => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
   }
 
   // --- Mapa de la red -------------------------------------------------------
@@ -640,9 +828,9 @@ export class App implements OnDestroy {
    * solos, que es como estaba antes, y al volver a entrar se reintenta.
    */
   private async cargarRecorridos(): Promise<void> {
-    if (Object.keys(this.recorridos()).length) return;
+    if (Object.keys(this.infoLineas()).length) return;
     try {
-      this.recorridos.set(await this.api.recorridosLineas());
+      this.infoLineas.set(await this.api.infoLineas());
     } catch {
       /* sin recorridos: números solos */
     }
