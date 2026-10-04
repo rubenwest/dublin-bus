@@ -21,6 +21,7 @@ import {
   momentoProgramado,
   LIMITE_DELAY_SEGUNDOS,
 } from './gtfsrt.mjs';
+import { nombreLinea } from './nombre-linea.mjs';
 
 cargarDotEnv();
 
@@ -153,7 +154,7 @@ async function main() {
   // routes.txt es pequeño: lo cargamos entero para traducir route_id -> "39A"
   const nombreRuta = new Map();
   for await (const r of filasCsv(`${gtfsDir}/routes.txt`)) {
-    nombreRuta.set(r.route_id, r.route_short_name || r.route_long_name || r.route_id);
+    nombreRuta.set(r.route_id, nombreLinea(r));
   }
 
   // stops.txt, solo para el título

@@ -967,9 +967,16 @@ Con algo escrito, la lista es una sola, por relevancia y sin grupos: partirla
 pondría el 41C detrás de un Luas que casó por una parada. El chip de grupo
 sigue filtrando.
 
-Pendiente menor: Irish Rail usa `rail` como nombre corto en 16 rutas
-(Belfast, Drogheda, Maynooth…), y en el grupo Tren sale una línea llamada
-"rail".
+**Los trenes se llaman por su destino** (`scripts/nombre-linea.mjs`). Irish
+Rail pone `rail` como nombre corto en 16 rutas sin relación entre sí, y como
+todo se agrupa por nombre corto salía una sola línea "rail" con el recorrido
+de Maynooth. `InterCity` y `Commuter` tenían el mismo problema: son marcas,
+pero en el estático cada una la lleva una sola ruta (Cork y Portlaoise). A
+esas tres se les pone el extremo que no es Dublín ("Belfast", "Maynooth",
+"Cork"), quitando el "via" para que las dos de Limerick sean una. El DART se
+queda como está. Ese nombre lo usan `indexar`, `trazados` y `llegadas`; si un
+script nuevo lee `route_short_name`, que lo pase por `nombreLinea` o el mapa
+dejará de casar con el buscador.
 
 ## Supabase
 

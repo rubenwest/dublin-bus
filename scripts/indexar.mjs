@@ -17,6 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
+import { nombreLinea } from "./nombre-linea.mjs";
 
 const [gtfsDir = "./gtfs", indiceDir = "./indice"] = process.argv.slice(2);
 
@@ -97,7 +98,7 @@ async function main() {
   // (tipo de vehículo y operador).
   const rutasInfo = {};
   for await (const r of filasCsv(path.join(gtfsDir, "routes.txt"))) {
-    rutas[r.route_id] = r.route_short_name || r.route_long_name || r.route_id;
+    rutas[r.route_id] = nombreLinea(r);
     rutasInfo[r.route_id] = {
       largo: r.route_long_name || null,
       tipo: r.route_type === "" || r.route_type == null ? null : Number(r.route_type),
