@@ -88,7 +88,14 @@
           <div class="linea-cabecera">
             <span class="linea linea-grande">{{ lineaActiva() }}</span>
             <div>
-              <h2>{{ t('linea_titulo', { linea: lineaActiva()! }) }}</h2>
+              <h2 class="titulo-linea">
+                {{ t('linea_titulo', { linea: lineaActiva()! }) }}
+                <button type="button" class="estrella" data-test="linea-favorita-cabecera"
+                  [class.activa]="esLineaFavorita(lineaActiva()!)"
+                  [attr.aria-label]="esLineaFavorita(lineaActiva()!) ? t('quitar_fav') : t('anadir_fav')"
+                  [attr.aria-pressed]="esLineaFavorita(lineaActiva()!)"
+                  (click)="alternarLineaFavorita(lineaActiva()!, $event)">{{ esLineaFavorita(lineaActiva()!) ? '★' : '☆' }}</button>
+              </h2>
               @if (recorridoDe(lineaActiva()!); as recorrido) {
                 <p class="recorrido-linea">{{ recorrido }}</p>
               }
@@ -238,31 +245,113 @@
             }
           </section>
         } @else {
+          <!-- Los grupos que la gente ya conoce (el Luas, el DART, "los de
+               letra"): con 200 líneas en una sola lista no se encuentra nada.
+               Se desliza en horizontal para no gastar tres renglones a 375 px. -->
+          <div class="grupos-lineas" role="group" [attr.aria-label]="t('tipo_linea')">
+            <button type="button" class="chip" data-test="grupo-todas"
+              [class.activo]="filtroGrupo() === 'todas'"
+              [attr.aria-pressed]="filtroGrupo() === 'todas'"
+              (click)="elegirGrupo('todas')">{{ t('todas') }}</button>
+            @for (g of gruposPresentes(); track g) {
+              <button type="button" class="chip" [attr.data-test]="'grupo-' + g"
+                [class.activo]="filtroGrupo() === g"
+                [attr.aria-pressed]="filtroGrupo() === g"
+                (click)="elegirGrupo(g)">{{ t('grupo_' + g) }}</button>
+            }
+          </div>
+
           <!-- Una fila por línea con su recorrido: el número solo no le dice
-               nada a quien no se lo sabe. Si casó por una parada, se dice
-               cuál, o no se entendería qué hace ahí. -->
-          <ul class="lista-lineas" data-test="catalogo-lineas">
-            @for (f of filasLineas(); track f.linea) {
-              <li>
-                <button type="button" data-test="fila-linea" (click)="abrirLinea(f.linea)">
-                  <span class="linea">{{ f.linea }}</span>
-                  <span class="info">
-                    @if (recorridoDe(f.linea); as recorrido) {
-                      <span class="nombre">{{ recorrido }}</span>
-                    }
-                    @if (f.parada) {
-                      <span class="motivo">{{ t('para_en', { parada: f.parada }) }}</span>
-                    }
-                  </span>
-                  <span class="flecha" aria-hidden="true">›</span>
-                </button>
-              </li>
-            } @empty {
-              @if (busquedaLinea().trim()) {
+               nada a quien no se lo sabe. La nota explica por qué sale una
+               línea cuando no es obvio (casó por una parada, está cerca). -->
+          <ng-template #filaLinea let-f>
+            <li>
+              <button type="button" data-test="fila-linea" (click)="abrirLinea(f.linea)">
+                <span class="linea">{{ f.linea }}</span>
+                <span class="info">
+                  @if (recorridoDe(f.linea); as recorrido) {
+                    <span class="nombre">{{ recorrido }}</span>
+                  }
+                  @if (f.nota) {
+                    <span class="motivo">{{ f.nota }}</span>
+                  }
+                </span>
+                <span
+                  class="estrella"
+                  [class.activa]="esLineaFavorita(f.linea)"
+                  data-test="linea-favorita"
+                  role="button"
+                  [attr.aria-label]="esLineaFavorita(f.linea) ? t('quitar_fav') : t('anadir_fav')"
+                  [attr.aria-pressed]="esLineaFavorita(f.linea)"
+                  (click)="alternarLineaFavorita(f.linea, $event)">{{ esLineaFavorita(f.linea) ? '★' : '☆' }}</span>
+              </button>
+            </li>
+          </ng-template>
+
+          @if (busquedaLinea().trim()) {
+            <ul class="lista-lineas" data-test="catalogo-lineas">
+              @for (f of filasBusqueda(); track f.linea) {
+                <ng-container *ngTemplateOutlet="filaLinea; context: { $implicit: f }" />
+              } @empty {
                 <li class="tenue">{{ t('sin_lineas', { q: busquedaLinea().trim() }) }}</li>
               }
+            </ul>
+          } @else {
+            @if (listaLineasEntera()) {
+              <h3 class="grupo">{{ t('tus_lineas') }}</h3>
+              @if (filasFavoritas().length) {
+                <ul class="lista-lineas" data-test="lineas-favoritas">
+                  @for (f of filasFavoritas(); track f.linea) {
+                    <ng-container *ngTemplateOutlet="filaLinea; context: { $implicit: f }" />
+                  }
+                </ul>
+              } @else {
+                <p class="tenue pista-lineas">{{ t('pista_lineas_fav') }}</p>
+              }
+
+              <!-- La ubicación solo se pide al tocar: un prompt del navegador
+                   en frío ahuyenta. Si ya se dio en otra visita, llega sola. -->
+              <h3 class="grupo">{{ t('cerca') }}</h3>
+              @switch (estadoGeo()) {
+                @case ('ok') {
+                  @if (filasCerca().length) {
+                    <ul class="lista-lineas" data-test="lineas-cerca">
+                      @for (f of filasCerca(); track f.linea) {
+                        <ng-container *ngTemplateOutlet="filaLinea; context: { $implicit: f }" />
+                      }
+                    </ul>
+                  } @else {
+                    <p class="tenue pista-lineas">{{ t('sin_lineas_cerca', { d: '400 m' }) }}</p>
+                  }
+                }
+                @case ('pidiendo') {
+                  <p class="tenue pista-lineas">{{ t('ubicando') }}</p>
+                }
+                @case ('denegado') {
+                  <p class="tenue pista-lineas">{{ t('lineas_cerca_denegado') }}</p>
+                }
+                @case ('inicial') {
+                  <button type="button" class="chip boton-cerca" data-test="lineas-cerca-ubicar"
+                    (click)="ubicar()">{{ t('lineas_cerca_boton') }}</button>
+                }
+                @default {
+                  <p class="tenue pista-lineas">{{ t('lineas_cerca_error') }}</p>
+                }
+              }
             }
-          </ul>
+
+            @for (s of seccionesLineas(); track s.grupo) {
+              <h3 class="grupo" [attr.data-test]="'seccion-' + s.grupo">{{ t('grupo_' + s.grupo) }}</h3>
+              @if (t('grupo_' + s.grupo + '_desc'); as desc) {
+                <p class="tenue pista-lineas">{{ desc }}</p>
+              }
+              <ul class="lista-lineas" data-test="catalogo-lineas">
+                @for (f of s.filas; track f.linea) {
+                  <ng-container *ngTemplateOutlet="filaLinea; context: { $implicit: f }" />
+                }
+              </ul>
+            }
+          }
         }
       }
     } @else if (modo() === 'cerca') {

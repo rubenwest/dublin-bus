@@ -511,7 +511,8 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: 3px 3px 0 var(--har
   box-shadow: 4px 4px 0 var(--hard);
 }
 .lista-lineas .linea {
-  flex: 0 0 4.2rem;
+  flex: 0 0 auto;
+  min-width: 4.2rem;
 }
 .lista-lineas .info {
   flex: 1 1 auto;
@@ -528,6 +529,43 @@ button:disabled { opacity: 0.5; cursor: default; box-shadow: 3px 3px 0 var(--har
 .lista-lineas .motivo {
   font-size: 0.78rem;
   color: var(--tenue);
+}
+/* Los grupos, en una fila que se desliza: a 375 px ocho chips en varias
+   líneas se comían la pantalla antes de la primera línea. */
+.grupos-lineas {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  margin: 1rem -1rem 0;
+  padding: 0 1rem 0.4rem;
+  scrollbar-width: none;
+}
+.grupos-lineas::-webkit-scrollbar { display: none; }
+.grupos-lineas .chip {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.pista-lineas {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+}
+.boton-cerca {
+  margin-bottom: 0.5rem;
+}
+.lista-lineas .estrella {
+  min-width: 36px;
+}
+.titulo-linea {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.titulo-linea .estrella {
+  border: none;
+  background: none;
+  padding: 0;
+  box-shadow: none;
+  min-height: 36px;
 }
 .linea-cabecera .recorrido-linea {
   font-weight: 600;

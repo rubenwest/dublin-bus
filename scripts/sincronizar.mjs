@@ -510,7 +510,8 @@ async function limpiarHorario(desde) {
  * conoce es "F1". Son ~400 filas, se suben enteras y ya.
  *
  * Con ellas va `nombre_largo` ("Swords Manor Via River Valley - Lower Abbey
- * St"), que es lo que enseña y en lo que busca el catálogo de líneas de la web.
+ * St"), que es lo que enseña y en lo que busca el catálogo de líneas de la web,
+ * y `tipo` / `agencia` (route_type, agency_id), con los que las agrupa.
  * `--rutas` sube solo esto, sin rehacer la carga del horario.
  */
 async function subirRutas() {
@@ -518,12 +519,14 @@ async function subirRutas() {
   if (!fs.existsSync(catalogo)) return;
 
   const r = JSON.parse(fs.readFileSync(catalogo, "utf8"));
-  const fLargo = "./indice/rutas-largo.json";
-  const largo = fs.existsSync(fLargo) ? JSON.parse(fs.readFileSync(fLargo, "utf8")) : {};
+  const fInfo = "./indice/rutas-info.json";
+  const info = fs.existsSync(fInfo) ? JSON.parse(fs.readFileSync(fInfo, "utf8")) : {};
   const filas = Object.entries(r).map(([id, nombre]) => ({
     id,
     nombre,
-    nombre_largo: largo[id] ?? null,
+    nombre_largo: info[id]?.largo ?? null,
+    tipo: info[id]?.tipo ?? null,
+    agencia: info[id]?.agencia ?? null,
   }));
   if (SECO) {
     const conLargo = filas.filter((f) => f.nombre_largo).length;
