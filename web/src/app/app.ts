@@ -299,12 +299,81 @@ export class App implements OnDestroy {
     ),
   );
 
-  /** El catálogo recortado por lo que se haya escrito en el buscador. */
-  readonly lineasCatalogo = computed(() => {
+  /**
+   * Para cada línea, su recorrido ("Swords Manor Via River Valley - Lower
+   * Abbey St"). Se pide al entrar en Líneas; hasta que llega, la lista sale
+   * con los números solos y se puede buscar por número igual que antes.
+   */
+  readonly recorridos = signal<Record<string, string>>({});
+
+  /**
+   * Las líneas que casan con lo escrito, y por qué. Un chip "41C" pelado no le
+   * sirve a quien no se sabe el número, y con 200 líneas recorrer la lista no
+   * es una opción: hay que poder escribir el sitio. Se busca en tres sitios,
+   * por este orden:
+   *
+   * 1. el número ("41" -> 41, 41B, 41C…; las que EMPIEZAN por lo escrito
+   *    primero, para que con "4" salgan 4, 40D, 41… antes que 14 o 140);
+   * 2. el recorrido ("Swords" -> las que salen o llegan a Swords);
+   * 3. el nombre de las paradas por las que pasa ("Swords" -> también las que
+   *    cruzan Swords sin terminar ahí). El GTFS no trae barrios, pero los
+   *    nombres de parada sí los llevan, y eso hace de filtro por zona sin
+   *    tener que mantener polígonos de nadie.
+   *
+   * El valor del mapa es la parada que justificó la coincidencia (caso 3), o
+   * `null` cuando la línea casó por número o recorrido y no hace falta
+   * explicar nada.
+   */
+  readonly coincidenciasLinea = computed(() => {
     const q = normaliza(this.busquedaLinea().trim());
     const todas = this.lineasTodas();
-    return q ? todas.filter((linea) => normaliza(linea).includes(q)) : todas;
+    const motivo = new Map<string, string | null>();
+    if (!q) {
+      for (const l of todas) motivo.set(l, null);
+      return motivo;
+    }
+
+    const porNumero = todas.filter((l) => normaliza(l).includes(q));
+    const empiezan = porNumero.filter((l) => normaliza(l).startsWith(q));
+    const contienen = porNumero.filter((l) => !normaliza(l).startsWith(q));
+    for (const l of [...empiezan, ...contienen]) motivo.set(l, null);
+
+    // Con una o dos letras casaría medio catálogo por casualidad ("st" está
+    // en cada "Street"): el recorrido y las paradas solo a partir de tres.
+    if (q.length < 3) return motivo;
+
+    const recorridos = this.recorridos();
+    for (const l of todas) {
+      if (!motivo.has(l) && normaliza(recorridos[l] ?? '').includes(q)) motivo.set(l, null);
+    }
+
+    const porParada = new Map<string, string>();
+    for (const p of this.paradas()) {
+      if (!normaliza(p.nombre).includes(q)) continue;
+      for (const l of p.lineas) {
+        if (!motivo.has(l) && !porParada.has(l)) porParada.set(l, p.nombre);
+      }
+    }
+    for (const l of todas) {
+      const parada = porParada.get(l);
+      if (parada) motivo.set(l, parada);
+    }
+    return motivo;
   });
+
+  /** El catálogo recortado por lo que se haya escrito en el buscador. */
+  readonly lineasCatalogo = computed(() => [...this.coincidenciasLinea().keys()]);
+
+  /** Lo mismo, como filas de la lista: la línea y, si casó por parada, cuál. */
+  readonly filasLineas = computed(() =>
+    [...this.coincidenciasLinea()].map(([linea, parada]) => ({ linea, parada })),
+  );
+
+  /** "Dundrum Luas Stn - Ardlea Rd (Beaumont)" -> con raya, que se lee como tramo. */
+  recorridoDe(linea: string): string | null {
+    const r = this.recorridos()[linea];
+    return r ? r.replace(/\s+-\s+/g, ' – ') : null;
+  }
 
   // --- Mapa de la red -------------------------------------------------------
 
@@ -562,7 +631,21 @@ export class App implements OnDestroy {
 
   verLineas(): void {
     this.modo.set('lineas');
+    void this.cargarRecorridos();
     if (this.vistaLineas() === 'mapa') void this.cargarTrazados();
+  }
+
+  /**
+   * Si falla no se dice nada: la lista sigue funcionando con los números
+   * solos, que es como estaba antes, y al volver a entrar se reintenta.
+   */
+  private async cargarRecorridos(): Promise<void> {
+    if (Object.keys(this.recorridos()).length) return;
+    try {
+      this.recorridos.set(await this.api.recorridosLineas());
+    } catch {
+      /* sin recorridos: números solos */
+    }
   }
 
   /** Cambia entre la lista de chips y el mapa de la red. */

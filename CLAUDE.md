@@ -907,6 +907,36 @@ El siguiente salto (las ~5.700 paradas restantes del estático) ya no es
 Dublin Bus urbano: Bus Éireann regional, Irish Rail fuera de Dublín. No hace
 falta.
 
+## El catálogo de líneas se busca por sitio (2026-10-04)
+
+Con el condado cargado el catálogo pasó a **200 líneas** en chips sueltos, y
+un chip "41C" no le dice nada a quien no se sabe el número. La primera idea
+fue filtrar por municipio o barrio, y se descartó por tres razones: una línea
+cruza varios municipios (el 41C es Dublin City y Fingal, así que sale en los
+dos filtros y no recorta nada); nadie piensa en "Fingal" sino en "Swords"; y
+los barrios no están en el GTFS, habría que traer polígonos de fuera.
+
+Lo que se hizo, que es lo que hacen Moovit o Citymapper:
+
+- **Cada línea en una fila con su recorrido**, que sale de `route_long_name`
+  (`ruta.nombre_largo`, servido por la vista `linea_catalogo`). Esa vista
+  agrupa por nombre corto porque el nombre **no es único en Irlanda**: el 14
+  de Dublin Bus y el 14 de Bus Éireann (Limerick - Killarney) comparten
+  nombre. Se queda el recorrido de la ruta con más viajes cargados.
+- **El buscador entiende sitios**: casa por número (las que empiezan por lo
+  escrito, primero), por recorrido y por el nombre de las paradas por las que
+  pasa. Los nombres de parada llevan el barrio ("Swords Castle", "Tallaght
+  Hospl"), y eso hace de filtro por zona sin mantener polígonos. Cuando una
+  línea casa por parada, la fila dice cuál ("Para en Swords Castle"); si no,
+  no se entendería qué hace ahí. Recorrido y paradas solo a partir de tres
+  letras: con dos, "st" casa con media red.
+- "Swords" da 9 líneas por recorrido y 7 más que lo cruzan.
+
+`linea_catalogo` agrupa los ~98.000 viajes en cada consulta (~300 ms). Se
+pide una vez por sesión, al entrar en Líneas, así que no merece una tabla.
+Tras cada estático, `sincronizar --nucleo` ya sube los nombres largos;
+`sincronizar --rutas` sube solo eso.
+
 ## Supabase
 
 Proyecto `dublin-bus`, región `eu-west-1` (Irlanda), plan gratuito.
@@ -942,6 +972,7 @@ permite "llegadas en vivo, anchas; histórico, estrecho".
 | `error_prediccion` | vista: cada predicción del feed contra lo que pasó |
 | `paso_predicho` | vista: una fila por AUTOBÚS, no por predicción. Ver abajo |
 | `fiabilidad` | vista: sesgo por parada, línea y franja horaria, con su `n` |
+| `linea_catalogo` | vista: una fila por línea con su recorrido (`route_long_name`) |
 | `vehiculo` | posiciones GPS, ~800 filas reescritas cada minuto. NO crece |
 | `feedback` | mensajes del formulario. INSERT anónimo; lectura solo `service_role` |
 
@@ -1042,6 +1073,7 @@ node scripts\sincronizar.mjs --centro --seco   cuenta las paradas del centro
 node scripts\sincronizar.mjs --centro          da de alta el centro (en_vivo)
 node scripts\sincronizar.mjs --nucleo --seco   cuenta las ~4.500 del nucleo (4 prefijos DB)
 node scripts\sincronizar.mjs --nucleo          da de alta el nucleo entero
+node scripts\sincronizar.mjs --rutas           sube solo nombres y recorridos de las líneas
 node scripts\sincronizar.mjs                   sube el día de hoy a Supabase
 node scripts\sincronizar.mjs --seco            cuenta sin subir
 node scripts\sincronizar.mjs --todo            sube todos los días
