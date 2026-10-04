@@ -235,7 +235,8 @@ async function subirParadas(ids) {
  * recalcular los patrones de todos los viajes que pasan por ella, que es
  * exactamente lo que hace `--centro` / `--nucleo` de una pasada.
  *
- * Con `--nucleo` cargado son las 1.877 paradas de Dublin Bus, así que la parada
+ * Con `--nucleo` cargado están las paradas de Dublin Bus de los cuatro
+ * ayuntamientos (~4.500), así que la parada
  * que quisieras dar de alta a mano ya está: activarla es un UPDATE de un
  * `boolean`, no una subida.
  */
@@ -244,7 +245,7 @@ function avisarHorarioRetirado() {
     "`--horario <parada>` se retiró: el horario ya no se guarda por parada, se\n" +
       "guarda por patrón de recorrido, y un patrón es de un viaje entero.\n\n" +
       "Para ensanchar la cobertura:\n" +
-      "  node scripts\\sincronizar.mjs --nucleo --seco   cuenta las 1.877 del núcleo\n" +
+      "  node scripts\\sincronizar.mjs --nucleo --seco   cuenta las del núcleo\n" +
       "  node scripts\\sincronizar.mjs --nucleo          las da de alta en vivo\n\n" +
       "Para empezar a guardar el histórico de una parada que ya está en vivo:\n" +
       "  update parada set recolectar = true where id in ('8220DB000270');",
@@ -290,18 +291,25 @@ async function upsertLotes(tabla, onConflict, filas, timeoutMs = 60_000) {
 async function subirCentro() {
   const caja = leerCaja();
   const catalogoP = "./indice/paradas.json";
-  // `--nucleo` añade a la caja las 1.877 paradas de Dublin Bus. Con el horario
-  // por patrones eso cabe: la caja del centro ocupaba 144 MB y el núcleo entero
-  // se queda en decenas, no en los ~410 MB de antes.
+  // `--nucleo` añade a la caja las paradas de Dublin Bus de los cuatro
+  // ayuntamientos del condado: el prefijo dice cuál es. `8220DB` es Dublin
+  // City, `8230DB` South Dublin (Tallaght, Clondalkin), `8240DB` Fingal
+  // (Swords, Blanchardstown) y `8250DB` Dún Laoghaire-Rathdown. Hasta el
+  // 2026-10-04 era solo `8220DB`, y cualquier línea que saliera del término
+  // municipal quedaba cortada: el 41C tenía en vivo 34 de sus 118 paradas, y
+  // un usuario no encontraba la 5029 de Swords porque no existía en la base.
   //
-  // AÑADE, no sustituye, y eso es a propósito: el prefijo `8220DB` deja fuera
+  // Con el horario por patrones eso cabe: la caja del centro ocupaba 144 MB y
+  // el núcleo entero se queda en decenas, no en los ~410 MB de antes.
+  //
+  // AÑADE, no sustituye, y eso es a propósito: los prefijos `DB` dejan fuera
   // el Luas (`8220GA`), Irish Rail (`8220IR`) y los andenes `8220B1` del
   // centro, que sí estaban en vivo. Como la carga termina barriendo todo viaje
   // que no venga de esta pasada, elegir solo por prefijo los dejaba en vivo
   // pero sin horario: 91 paradas mudas, 56 de ellas Luas, que es justo lo que
   // más llegadas tiene. La selección tiene que ser un superconjunto de lo que
   // ya estaba en vivo, o la limpieza se lleva por delante lo que no recarga.
-  const prefijoNucleo = NUCLEO ? "8220DB" : null;
+  const prefijosNucleo = NUCLEO ? ["8220DB", "8230DB", "8240DB", "8250DB"] : [];
   for (const f of [catalogoP, "./indice/trip-ruta.json", "./indice/rutas.json"]) {
     if (!fs.existsSync(f)) {
       console.error(`Falta ${f}. Corre antes: node scripts/indexar.mjs ./gtfs ./indice`);
@@ -322,12 +330,12 @@ async function subirCentro() {
     (p) =>
       enCaja(p) ||
       EXCEPCIONES.has(p.id) ||
-      (prefijoNucleo != null && p.id.startsWith(prefijoNucleo)),
+      prefijosNucleo.some((pre) => p.id.startsWith(pre)),
   );
 
   console.log(
-    (prefijoNucleo
-      ? `Núcleo Dublin Bus (${prefijoNucleo}*) + caja del centro\n`
+    (prefijosNucleo.length
+      ? `Núcleo Dublin Bus (${prefijosNucleo.join("*, ")}*) + caja del centro\n`
       : `Caja lat[${caja.latMin}, ${caja.latMax}] lon[${caja.lonMin}, ${caja.lonMax}]\n`) +
       `${dentro.length} paradas dentro (de ${catalogo.length} con servicio).`,
   );

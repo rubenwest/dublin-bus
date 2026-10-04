@@ -590,6 +590,8 @@ con el estado offline honesto. Ver "Ahorro en el móvil" más arriba.
 **4. ~~Cargar el núcleo `8220DB` (1.877 paradas)~~ HECHO** (2026-09-17).
 **1.968 paradas en vivo**: las 1.877 del núcleo, el Luas, Irish Rail, los
 andenes del centro y Dún Laoghaire. La línea 14 completa, que era el motivo.
+**Desde el 2026-10-04 son 4.571**: los cuatro ayuntamientos, no solo Dublin
+City. Ver "El condado entero".
 
 Costó tres arreglos, y ninguno era el que parecía: el `= any(array)` de la
 RPC del horario, el `Intl` sin cachear de `momentoProgramado` y el `select`
@@ -863,6 +865,48 @@ y manda un correo por Resend (mismo patrón que `avisar_feedback`) si:
 Un correo por motivo cada 12 h; el estado (`alerta_estado`) se borra al
 recuperarse. `select vigilar_llegadas(1.01)` fuerza el aviso para probarlo.
 
+## El condado entero (2026-10-04)
+
+Feedback: **"No aparece la parada 5029 del 41C"**. El código público 5029 es
+`8240DB005029`, Boroimhe Laurels (Swords), y no existía en `parada`. El 41C
+tiene 118 paradas y solo 34 estaban en vivo.
+
+El "núcleo" no era Dublin Bus: era **Dublin City Council**. El prefijo del
+`stop_id` dice el ayuntamiento, no el operador:
+
+| Prefijo | Ayuntamiento | Paradas |
+|---|---|---|
+| `8220DB` | Dublin City | 1.880 |
+| `8230DB` | South Dublin (Tallaght, Clondalkin) | 938 |
+| `8240DB` | Fingal (Swords, Blanchardstown) | 897 |
+| `8250DB` | Dún Laoghaire-Rathdown | 766 |
+
+Con solo `8220DB`, cualquier línea que saliera del término municipal se
+cortaba en el límite. Es el mismo aviso que la línea 14, un anillo más afuera.
+`--nucleo` carga ahora los cuatro, con el estático del 2026-10-03 (987 de
+1.000 trips vivos casaban):
+
+| | antes | después |
+|---|---|---|
+| Paradas en vivo | 1.971 | **4.571** |
+| Viajes / patrones | 84.059 / 8.230 | 98.359 / 10.499 |
+| `patron_parada` | 54 MB (229.074 filas) | 77 MB (450.691) |
+| Base entera | 222 MB | 250 MB |
+| Paradas con llegadas (16:15, domingo) | — | 4.434 |
+| Duración de la pasada (reloj) | 2,4–4,7 s | 4,8–8,7 s |
+
+**Lo que no se cruzó fue el techo de CPU**, y no por suerte: el límite mide
+CPU, no tiempo de reloj, y las cuatro fases tienen costes distintos. La
+descarga del feed (~4,5 s) y las consultas a Postgres son espera de red, no
+cuentan. Lo que sí cuenta es el cruce (trip, parada), que crece con los pares
+y no con las paradas; tras quitar el `Intl` del bucle quedó en 45 ms con 719
+paradas, así que había un orden de magnitud de margen. Lo que subió en el
+reloj es la escritura de `llegada_actual`, que ahora son 4.571 filas.
+
+El siguiente salto (las ~5.700 paradas restantes del estático) ya no es
+Dublin Bus urbano: Bus Éireann regional, Irish Rail fuera de Dublín. No hace
+falta.
+
 ## Supabase
 
 Proyecto `dublin-bus`, región `eu-west-1` (Irlanda), plan gratuito.
@@ -877,9 +921,9 @@ repitió un valor) es justo lo que necesita la detección de congelados.
 siguiente iteración y ya está hecho, 2026-09-08):
 
 - `parada.en_vivo` → se muestra en la web y se le reescribe `llegada_actual`.
-  **Ancho: 1.968 paradas** (las 1.877 del núcleo `8220DB`, el Luas, Irish
-  Rail, los andenes del centro y Dún Laoghaire). No cuesta ni una llamada más
-  a la NTA, el feed ya viene entero.
+  **Ancho: 4.571 paradas** (Dublin Bus en los cuatro ayuntamientos —
+  `8220DB`, `8230DB`, `8240DB`, `8250DB`—, el Luas, Irish Rail y los andenes
+  del centro). No cuesta ni una llamada más a la NTA, el feed ya viene entero.
 - `parada.recolectar` → se guarda su histórico en `serie`. **Estrecho: sigue en
   3**, porque el histórico es lo único que llena el plan gratuito (100 paradas
   ≈ 417 MB/mes de 500).
@@ -996,7 +1040,7 @@ node scripts\indexar.mjs .\gtfs .\indice       tras bajar estático nuevo
 node scripts\trazados.mjs                      trazado de las líneas para el mapa
 node scripts\sincronizar.mjs --centro --seco   cuenta las paradas del centro
 node scripts\sincronizar.mjs --centro          da de alta el centro (en_vivo)
-node scripts\sincronizar.mjs --nucleo --seco   cuenta las 1.877 del nucleo 8220DB
+node scripts\sincronizar.mjs --nucleo --seco   cuenta las ~4.500 del nucleo (4 prefijos DB)
 node scripts\sincronizar.mjs --nucleo          da de alta el nucleo entero
 node scripts\sincronizar.mjs                   sube el día de hoy a Supabase
 node scripts\sincronizar.mjs --seco            cuenta sin subir
