@@ -89,6 +89,9 @@
             <span class="linea linea-grande">{{ lineaActiva() }}</span>
             <div>
               <h2>{{ t('linea_titulo', { linea: lineaActiva()! }) }}</h2>
+              @if (recorridoDe(lineaActiva()!); as recorrido) {
+                <p class="recorrido-linea">{{ recorrido }}</p>
+              }
               <p class="tenue">{{ t('linea_paradas') }}</p>
               <button type="button" class="enlace" data-test="ver-en-mapa"
                 (click)="verEnMapa(lineaActiva()!)">
@@ -235,13 +238,31 @@
             }
           </section>
         } @else {
-          <div class="catalogo-lineas" data-test="catalogo-lineas">
-            @for (linea of lineasCatalogo(); track linea) {
-              <button type="button" class="chip linea-selector" (click)="abrirLinea(linea)">
-                {{ linea }}
-              </button>
+          <!-- Una fila por línea con su recorrido: el número solo no le dice
+               nada a quien no se lo sabe. Si casó por una parada, se dice
+               cuál, o no se entendería qué hace ahí. -->
+          <ul class="lista-lineas" data-test="catalogo-lineas">
+            @for (f of filasLineas(); track f.linea) {
+              <li>
+                <button type="button" data-test="fila-linea" (click)="abrirLinea(f.linea)">
+                  <span class="linea">{{ f.linea }}</span>
+                  <span class="info">
+                    @if (recorridoDe(f.linea); as recorrido) {
+                      <span class="nombre">{{ recorrido }}</span>
+                    }
+                    @if (f.parada) {
+                      <span class="motivo">{{ t('para_en', { parada: f.parada }) }}</span>
+                    }
+                  </span>
+                  <span class="flecha" aria-hidden="true">›</span>
+                </button>
+              </li>
+            } @empty {
+              @if (busquedaLinea().trim()) {
+                <li class="tenue">{{ t('sin_lineas', { q: busquedaLinea().trim() }) }}</li>
+              }
             }
-          </div>
+          </ul>
         }
       }
     } @else if (modo() === 'cerca') {

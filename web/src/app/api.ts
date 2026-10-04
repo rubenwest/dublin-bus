@@ -125,6 +125,7 @@ export class Api {
   private recorridos = new Map<string, Promise<SentidoLinea[]>>();
   private fiabilidades = new Map<string, Promise<Fiabilidad[]>>();
   private trazadosLinea: Promise<TrazadosLinea> | null = null;
+  private recorridosCatalogo: Promise<Record<string, string>> | null = null;
 
   private get cabeceras() {
     return {
@@ -329,6 +330,33 @@ export class Api {
       });
     }
     return this.trazadosLinea;
+  }
+
+  /**
+   * El recorrido de cada línea del catálogo ("Swords Manor Via River Valley -
+   * Lower Abbey St"), que es lo que deja elegir línea a quien no se sabe el
+   * número y buscar por sitio. Sale de `route_long_name` del GTFS a través de
+   * la vista `linea_catalogo`. Son ~200 filas, una petición, y se cachea para
+   * toda la sesión: no cambian hasta el siguiente estático.
+   */
+  recorridosLineas(): Promise<Record<string, string>> {
+    if (!this.recorridosCatalogo) {
+      this.recorridosCatalogo = this.leer(
+        this.http.get<{ linea: string; recorrido: string }[]>(
+          `${entorno.supabaseUrl}/rest/v1/linea_catalogo`,
+          {
+            headers: { ...this.cabeceras, Range: '0-999' },
+            params: { select: 'linea,recorrido' },
+          },
+        ),
+      )
+        .then((filas) => Object.fromEntries(filas.map((f) => [f.linea, f.recorrido])))
+        .catch((error) => {
+          this.recorridosCatalogo = null;
+          throw error;
+        });
+    }
+    return this.recorridosCatalogo;
   }
 
   /**

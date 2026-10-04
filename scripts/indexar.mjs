@@ -91,8 +91,12 @@ async function main() {
   }
 
   const rutas = {};
+  // Aparte y no dentro de rutas.json, que lo leen varios scripts como
+  // route_id -> nombre corto y no tienen por qué enterarse.
+  const rutasLargo = {};
   for await (const r of filasCsv(path.join(gtfsDir, "routes.txt"))) {
     rutas[r.route_id] = r.route_short_name || r.route_long_name || r.route_id;
+    if (r.route_long_name) rutasLargo[r.route_id] = r.route_long_name;
   }
   console.log(`     ${paradas.size} paradas, ${Object.keys(rutas).length} rutas`);
 
@@ -150,6 +154,7 @@ async function main() {
     JSON.stringify(conServicio.map((p) => ({ id: p.id, n: p.nombre, lat: p.lat, lon: p.lon, t: p.trips }))),
   );
   fs.writeFileSync(path.join(indiceDir, "rutas.json"), JSON.stringify(rutas));
+  fs.writeFileSync(path.join(indiceDir, "rutas-largo.json"), JSON.stringify(rutasLargo));
   fs.writeFileSync(
     path.join(indiceDir, "trip-ruta.json"),
     JSON.stringify(Object.fromEntries(tripRuta)),

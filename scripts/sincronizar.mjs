@@ -34,6 +34,7 @@ const TODO = args.includes("--todo");
 const HORARIO = args.includes("--horario");
 const CENTRO = args.includes("--centro");
 const NUCLEO = args.includes("--nucleo");
+const RUTAS = args.includes("--rutas");
 const DIA = args.includes("--dia") ? args[args.indexOf("--dia") + 1] : null;
 const datosDir = "./datos";
 
@@ -506,14 +507,29 @@ async function limpiarHorario(desde) {
 
 /**
  * Catálogo de rutas. El feed trae route_id crudos ("1 F1 a"); lo que la gente
- * conoce es "F1". Son 403 filas, se suben enteras y ya.
+ * conoce es "F1". Son ~400 filas, se suben enteras y ya.
+ *
+ * Con ellas va `nombre_largo` ("Swords Manor Via River Valley - Lower Abbey
+ * St"), que es lo que enseña y en lo que busca el catálogo de líneas de la web.
+ * `--rutas` sube solo esto, sin rehacer la carga del horario.
  */
 async function subirRutas() {
   const catalogo = "./indice/rutas.json";
   if (!fs.existsSync(catalogo)) return;
 
   const r = JSON.parse(fs.readFileSync(catalogo, "utf8"));
-  const filas = Object.entries(r).map(([id, nombre]) => ({ id, nombre }));
+  const fLargo = "./indice/rutas-largo.json";
+  const largo = fs.existsSync(fLargo) ? JSON.parse(fs.readFileSync(fLargo, "utf8")) : {};
+  const filas = Object.entries(r).map(([id, nombre]) => ({
+    id,
+    nombre,
+    nombre_largo: largo[id] ?? null,
+  }));
+  if (SECO) {
+    const conLargo = filas.filter((f) => f.nombre_largo).length;
+    console.log(`[SECO] rutas: ${filas.length}, ${conLargo} con nombre largo`);
+    return;
+  }
 
   for (let i = 0; i < filas.length; i += LOTE) {
     const res = await fetch(`${URL_BASE}/rest/v1/ruta?on_conflict=id`, {
@@ -538,6 +554,11 @@ async function subirRutas() {
 
 if (CENTRO || NUCLEO) {
   await subirCentro();
+  process.exit(0);
+}
+
+if (RUTAS) {
+  await subirRutas();
   process.exit(0);
 }
 
