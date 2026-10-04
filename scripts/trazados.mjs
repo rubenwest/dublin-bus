@@ -47,6 +47,7 @@
 
 import fs from 'node:fs';
 import readline from 'node:readline';
+import { nombreLinea } from './nombre-linea.mjs';
 
 const [gtfsDir = './gtfs', salida = './web/public/trazados-linea.json'] = process.argv.slice(2);
 
@@ -103,7 +104,11 @@ const rutas = new Map(); // route_id -> nombre corto
 {
   const { col, filas } = leerTabla('routes.txt');
   for (const f of filas) {
-    const nombre = (f[col.route_short_name] || f[col.route_long_name] || '').trim();
+    const nombre = nombreLinea({
+      route_id: f[col.route_id],
+      route_short_name: f[col.route_short_name],
+      route_long_name: f[col.route_long_name],
+    });
     if (nombre) rutas.set(f[col.route_id], nombre);
   }
 }
