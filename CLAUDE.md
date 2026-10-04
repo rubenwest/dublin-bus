@@ -220,8 +220,8 @@ franja de las 18. Decisiones que valen la pena recordar:
 - Va aparte del refresco de llegadas y cacheada por parada. Si falla, la
   pantalla sigue dando los minutos: son datos de semanas, no del minuto.
 
-Hoy solo tiene datos en las 3 paradas de `recolectar`; en las otras 655 no
-aparece nada, que es lo correcto.
+Sale solo en las paradas de `recolectar` (20 desde el 2026-10-04); en las
+demás no aparece nada, que es lo correcto.
 
 **La PWA se auto-actualiza** (`SwUpdate` en `app.ts`). Antes, tras un despliegue
 el service worker seguía sirviendo la versión vieja hasta cerrar la app del todo
@@ -599,14 +599,20 @@ de PostgREST cortando en 1.000 filas sin decirlo. Los tres están contados más
 arriba, en "Dos techos al ensanchar", "Lo que de verdad cuesta CPU en la Edge
 Function" y "PostgREST corta en 1.000 filas y no lo dice".
 
-**5. Ensanchar `recolectar` de 3 a ~20 paradas.** Es lo que queda, y ahora es
-lo que más valor daría: la banda de fiabilidad funciona pero solo tiene datos
-en 3 de las 658 paradas en vivo. No cuesta ni una llamada más a la NTA y son
-83 MB/mes de los 500.
+**5. ~~Ensanchar `recolectar` de 3 a ~20 paradas~~ HECHO el 2026-10-04**,
+antes de mover el enlace en redes: con el histórico en 3 paradas, casi todo
+el que entrara vería una app de minutos más. Se eligió una parada por zona
+entre las de más autobuses del horario (`indice/paradas.json`, campo `t`):
+centro (O'Connell St, Westmoreland, Kildare St, Wood Quay, Dorset St, Leeson
+St), norte (Broadstone, Five Lamps, Fairview, Ballyboggan), sur (UCD,
+Blackrock, Dún Laoghaire, Rathmines), oeste (Navan Rd, Liffey Valley, Balfe
+Rd, Blanchardstown), Tallaght y Swords. Cambiar la lista es un `update parada
+set recolectar = ...`; la carga del horario ya las recoge sola.
 
-**6. Retención de `serie`.** No hay poda ni particionado. A 20 paradas son unos
-seis meses hasta llenar el plan gratuito. Decidir si los tramos crudos viejos
-se agregan y se tiran conviene hacerlo antes, no con el disco al 90%.
+**6. Retención de `serie`. AHORA ES URGENTE.** No hay poda ni particionado.
+Con 20 paradas son ~83 MB/mes, y el 2026-10-04 la base estaba en 250 MB de
+500: unos tres meses, no seis. Decidir si los tramos crudos viejos se agregan
+y se tiran conviene hacerlo antes, no con el disco al 90%.
 
 **7. Una pantalla propia de fiabilidad.** `fiabilidad` ya calcula
 `error_abs_min` y `p90_min` y nadie los enseña. El p90 es la pregunta de quien
@@ -835,10 +841,11 @@ barrido, quedaron **91 paradas mudas, 56 de ellas del Luas** — justo las que
 más llegadas tienen.
 
 Regla: **la selección de una carga tiene que ser un superconjunto de lo que ya
-está `en_vivo`.** Ahora `--nucleo` es núcleo ∪ caja ∪ `EXCEPCIONES`, y las
-excepciones son las paradas de `recolectar` que caen fuera de la caja: dejarlas
-sin horario corta la serie histórica, que es lo único que no se puede
-reconstruir después.
+está `en_vivo`.** Ahora `--nucleo` es núcleo ∪ caja ∪ histórico, y el
+histórico son las paradas de `recolectar`, que la carga pide a Supabase en
+cada pasada: dejarlas sin horario corta la serie, que es lo único que no se
+puede reconstruir después. Hasta el 2026-10-04 era una lista escrita a mano
+en el script, y se quedó atrás en cuanto el histórico pasó a 20.
 
 ## El estático caduca y nadie avisa (2026-09-30)
 
@@ -995,9 +1002,9 @@ siguiente iteración y ya está hecho, 2026-09-08):
   **Ancho: 4.571 paradas** (Dublin Bus en los cuatro ayuntamientos —
   `8220DB`, `8230DB`, `8240DB`, `8250DB`—, el Luas, Irish Rail y los andenes
   del centro). No cuesta ni una llamada más a la NTA, el feed ya viene entero.
-- `parada.recolectar` → se guarda su histórico en `serie`. **Estrecho: sigue en
-  3**, porque el histórico es lo único que llena el plan gratuito (100 paradas
-  ≈ 417 MB/mes de 500).
+- `parada.recolectar` → se guarda su histórico en `serie`. **Estrecho: 20
+  paradas** desde el 2026-10-04, porque el histórico es lo único que llena el
+  plan gratuito (100 paradas ≈ 417 MB/mes de 500).
 
 Juntarlas en una sola bandera era lo que impedía ampliar. Separarlas es lo que
 permite "llegadas en vivo, anchas; histórico, estrecho".

@@ -46,11 +46,29 @@ const datosDir = "./datos";
 const CAJA_CENTRO = { latMin: 53.33, latMax: 53.365, lonMin: -6.31, lonMax: -6.22 };
 
 /**
- * Paradas que entran siempre, caigan o no en la caja: son las del histórico
- * (`parada.recolectar`) que quedan fuera del centro. Si se quedaran sin horario
- * la serie se corta, que es lo único que no se puede reconstruir después.
+ * Paradas que entran siempre, caigan o no en la caja: las del histórico
+ * (`parada.recolectar`). Si se quedaran sin horario la serie se corta, que es
+ * lo único que no se puede reconstruir después.
+ *
+ * Antes era una lista escrita aquí a mano, y se quedó atrás en cuanto el
+ * histórico pasó de 3 a 20 paradas (2026-10-04): un `--centro` habría dejado
+ * sin horario a las 17 de fuera de la caja. Ahora se piden a Supabase en cada
+ * carga, y esta lista solo hace de red cuando no hay conexión (`--seco` sin
+ * credenciales).
  */
-const EXCEPCIONES = new Set(["8250DB002039"]);
+const EXCEPCIONES_SIN_CONEXION = new Set(["8250DB002039"]);
+
+async function paradasDelHistorico() {
+  if (!URL_BASE || !SERVICE_KEY) return EXCEPCIONES_SIN_CONEXION;
+  const res = await fetch(`${URL_BASE}/rest/v1/parada?select=id&recolectar=eq.true`, {
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) {
+    throw new Error(`paradas del histórico: HTTP ${res.status} — ${(await res.text()).slice(0, 300)}`);
+  }
+  return new Set([...EXCEPCIONES_SIN_CONEXION, ...(await res.json()).map((p) => p.id)]);
+}
 
 function leerCaja() {
   const i = args.indexOf("--caja");
@@ -327,10 +345,11 @@ async function subirCentro() {
     p.lat >= caja.latMin && p.lat <= caja.latMax &&
     p.lon >= caja.lonMin && p.lon <= caja.lonMax;
 
+  const historico = await paradasDelHistorico();
   const dentro = catalogo.filter(
     (p) =>
       enCaja(p) ||
-      EXCEPCIONES.has(p.id) ||
+      historico.has(p.id) ||
       prefijosNucleo.some((pre) => p.id.startsWith(pre)),
   );
 
