@@ -961,6 +961,52 @@ Cargado en producción el 2026-10-07 con el estático del **06-10**: Maynooth
   (5,6 s, 174k buffers): no se tocó. **Cargar fuera de hora punta y lanzar
   `analyze` de `viaje`, `patron` y `patron_parada` al terminar.**
 
+## "¿A dónde vas?" (2026-10-07)
+
+Del mismo hilo de Reddit: *"wanted the line thing before to see what other
+routes I could take to get to places"*. Cuarta pestaña: origen (tu ubicación
+o una parada), destino (una parada o un sitio entero: "Swords" son sus 12
+paradas) y las líneas que llevan **sin transbordo**. También se entra desde
+las llegadas de una parada ("¿A dónde vas desde aquí?").
+
+**Sin transbordos a propósito.** Combinar es un planificador de rutas; Google
+Maps y el Journey Planner de TFI lo hacen mejor, y la pantalla enlaza al
+segundo. Lo que no hacen es lo que sí enseña esta: de cada línea, **cuándo
+pasa el próximo que de verdad llega**, a cuál ya no llegas andando (tachado)
+y a qué hora llegarías. Se ordena por eso, por hora de llegada, no por la
+línea más corta.
+
+Todo el cruce lo hace `lineas_directas(p_origen jsonb, p_destino text[])`:
+una línea sirve si un recorrido pasa por una parada de origen y **más
+adelante** (`orden` mayor) por una de destino, que es lo que descarta el
+sentido contrario. Por línea se queda el par subir/bajar que menos tarda
+contando el paseo a 80 m/min, y las próximas salidas salen de
+`llegada_actual` de esa parada, **filtradas a los viajes cuyo recorrido llega
+al destino**. No es un detalle: en Irish Life (41C) cuatro de las siete
+"llegadas" eran buses que **terminan ahí**, viniendo de Swords. La pantalla
+de llegadas normal los cuenta; esta no.
+
+Decisiones:
+
+- **El origen es un radio de 500 m también cuando eliges una parada**, no
+  solo con la ubicación. Con 250 m, de O'Connell St Lwr a Swords no salía
+  nada: los 41 salen de Lower Abbey St, a 400 m. La fila dice cuánto se anda.
+- **El destino-parada incluye sus vecinas a 250 m**: la de enfrente se llama
+  igual y es la del otro sentido.
+- **Se repregunta cada minuto** con la pantalla a la vista, al volver de una
+  parada y al sacar el móvil del bolsillo. Si un refresco falla se queda lo
+  de antes avisando, como en las llegadas.
+
+**Rendimiento: `anon` tiene `statement_timeout` de 3 s**, no 8. La primera
+versión tardaba 1,7 s hacia Swords y 2,2 s hacia Tallaght con la base
+cargada. Dos estimaciones malas del planner, las dos curadas con `LATERAL`:
+buscar la línea de cada patrón (estimaba 11.600 patrones, eran 104, y
+recorría `viaje` entera: 1,6 s) y las próximas salidas (desplegaba las
+llegadas de las 5.428 paradas para quedarse con cuatro). El `limit 1` del
+segundo LATERAL impide que Postgres lo aplane y vuelva al join. Se probó
+también juntar ocurrencias de origen y destino por el índice de parada, y
+salió peor (2,7 s): las lecturas por `stop_id` caen dispersas por la tabla.
+
 ## El catálogo de líneas se busca por sitio (2026-10-04)
 
 Con el condado cargado el catálogo pasó a **200 líneas** en chips sueltos, y

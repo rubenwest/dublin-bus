@@ -98,6 +98,26 @@ export const MIN_BUSES_FIABLE = 12;
  */
 export type TrazadosLinea = Record<string, [number, number][][]>;
 
+/**
+ * Una línea que lleva del origen al destino sin transbordo, tal cual la
+ * devuelve `lineas_directas`: dónde subir y bajar (el par que menos tarda
+ * contando el paseo) y las próximas salidas en la parada de subida.
+ *
+ * `proximas` ya viene filtrada a los viajes cuyo recorrido llega a `baja`: un
+ * 41 que termina antes de tu destino no está aquí aunque pase por tu parada.
+ */
+export interface OpcionDirecta {
+  linea: string;
+  sube: string;
+  /** Metros a pie hasta `sube`, los que mandó el cliente. */
+  metros: number;
+  baja: string;
+  /** Duración del trayecto según el horario, en segundos. */
+  segs: number;
+  paradas: number;
+  proximas: Llegada[];
+}
+
 /** Un sentido representativo de una línea, limitado a las paradas disponibles. */
 export interface SentidoLinea {
   id: string;
@@ -440,6 +460,26 @@ export class Api {
     return [primero, segundo]
       .filter((p): p is { paradas: string[]; veces: number } => p != null)
       .map((p, i) => ({ id: `${linea}-${i + 1}`, paradas: p.paradas }));
+  }
+
+  /**
+   * Las líneas que van de unas paradas a otras sin transbordo. Todo el cruce
+   * lo hace la base (`lineas_directas`): son los recorridos de `patron_parada`,
+   * que en el navegador no están y serían megas.
+   *
+   * No se cachea: las próximas salidas cambian cada minuto.
+   */
+  lineasDirectas(
+    origen: { id: string; m: number }[],
+    destino: string[],
+  ): Promise<OpcionDirecta[]> {
+    return this.leer(
+      this.http.post<OpcionDirecta[]>(
+        `${entorno.supabaseUrl}/rest/v1/rpc/lineas_directas`,
+        { p_origen: origen, p_destino: destino },
+        { headers: this.cabeceras },
+      ),
+    );
   }
 
   /**
