@@ -38,7 +38,7 @@
     <span class="sep" aria-hidden="true">›</span>
     <button type="button" class="miga" data-test="miga-modo"
       (click)="modo() === 'lineas' ? volverAListaLineas() : volver()">
-      {{ modo() === 'cerca' ? t('cerca') : modo() === 'lineas' ? t('lineas_modo') : t('buscar') }}
+      {{ nombreModo() }}
     </button>
     @if (lineaActiva()) {
       <span class="sep" aria-hidden="true">›</span>
@@ -60,9 +60,7 @@
       <span class="sep" aria-hidden="true">›</span>
       <span class="miga actual" aria-current="page">{{ t('linea_titulo', { linea: lineaActiva()! }) }}</span>
     } @else {
-      <span class="miga actual" aria-current="page">
-        {{ modo() === 'cerca' ? t('cerca') : modo() === 'lineas' ? t('lineas_modo') : t('buscar') }}
-      </span>
+      <span class="miga actual" aria-current="page">{{ nombreModo() }}</span>
     }
   }
 </nav>
@@ -80,6 +78,8 @@
         [class.activo]="modo() === 'buscar'" (click)="verBuscar()">{{ t('buscar') }}</button>
       <button type="button" class="modo" data-test="modo-lineas"
         [class.activo]="modo() === 'lineas'" (click)="verLineas()">{{ t('lineas_modo') }}</button>
+      <button type="button" class="modo" data-test="modo-ir"
+        [class.activo]="modo() === 'ir'" (click)="verIr()">{{ t('ir_modo') }}</button>
     </div>
 
     @if (modo() === 'lineas') {
@@ -354,6 +354,167 @@
           }
         }
       }
+    } @else if (modo() === 'ir') {
+    <!-- ¿A dónde vas?: las líneas que llevan de aquí a allí sin transbordo, con
+         cuándo pasa el próximo que de verdad llega. -->
+    <section class="ir" data-test="panel-ir">
+      <h3 class="grupo">{{ t('ir_desde') }}</h3>
+      @if (origenIr(); as o) {
+        <div class="punto-ir" data-test="origen-ir">
+          @if (o.tipo === 'ubicacion') {
+            <span class="nombre">{{ t('ir_tu_ubicacion') }}</span>
+            @switch (estadoGeo()) {
+              @case ('pidiendo') { <span class="tenue">{{ t('ubicando') }}</span> }
+              @case ('denegado') { <span class="error">{{ t('geo_denegada') }}</span> }
+              @case ('ok') {
+                @if (!paradasOrigenIr().length) {
+                  <span class="tenue">{{ t('ir_sin_paradas_cerca', { d: '500 m' }) }}</span>
+                }
+              }
+              @default {
+                @if (estadoGeo() !== 'inicial') { <span class="error">{{ t('geo_error') }}</span> }
+              }
+            }
+          } @else {
+            <span class="sprite" [class.tram]="esTram(o.parada)" aria-hidden="true"></span>
+            <span class="nombre">{{ o.parada.nombre }}</span>
+          }
+          <button type="button" class="enlace" data-test="cambiar-origen" (click)="cambiarOrigen()">
+            {{ t('ir_cambiar') }}
+          </button>
+        </div>
+      } @else {
+        <button type="button" class="chip boton-cerca" data-test="ir-ubicacion"
+          (click)="usarUbicacionIr()">{{ t('ir_usar_ubicacion') }}</button>
+        <label for="q-origen" class="sr-only">{{ t('ir_ph_origen') }}</label>
+        <input id="q-origen" type="search" inputmode="search" autocomplete="off"
+          [placeholder]="t('ir_ph_origen')" [value]="busquedaOrigen()"
+          (input)="busquedaOrigen.set($any($event.target).value)" />
+        @if (sugerenciasOrigen().length) {
+          <ul class="resultados sugerencias-ir">
+            @for (p of sugerenciasOrigen(); track p.id) {
+              <li>
+                <button type="button" data-test="sugerencia-origen" (click)="elegirOrigen(p)">
+                  <span class="sprite" [class.tram]="esTram(p)" aria-hidden="true"></span>
+                  <span class="info">
+                    <span class="nombre">{{ p.nombre }}</span>
+                    <span class="codigo">{{ t('id_parada', { id: codigoVisible(p) }) }}</span>
+                  </span>
+                </button>
+              </li>
+            }
+          </ul>
+        }
+      }
+
+      <h3 class="grupo">{{ t('ir_hasta') }}</h3>
+      @if (destinoIr(); as d) {
+        <div class="punto-ir" data-test="destino-ir">
+          <span class="nombre">{{ d.nombre }}</span>
+          @if (d.sitio) {
+            <span class="tenue">{{ t('ir_n_paradas', { n: d.paradas.length }) }}</span>
+          }
+          <button type="button" class="enlace" data-test="cambiar-destino" (click)="cambiarDestino()">
+            {{ t('ir_cambiar') }}
+          </button>
+        </div>
+      } @else {
+        <label for="q-destino" class="sr-only">{{ t('ir_ph_destino') }}</label>
+        <input id="q-destino" type="search" inputmode="search" autocomplete="off"
+          [placeholder]="t('ir_ph_destino')" [value]="busquedaDestino()"
+          (input)="busquedaDestino.set($any($event.target).value)" />
+        @if (sugerenciasDestino(); as s) {
+          @if (s.sitio || s.paradas.length) {
+            <ul class="resultados sugerencias-ir">
+              @if (s.sitio; as sitio) {
+                <li>
+                  <button type="button" data-test="sugerencia-sitio" (click)="elegirDestinoSitio(sitio.nombre)">
+                    <span class="info">
+                      <span class="nombre">{{ t('ir_todo_sitio', { sitio: sitio.nombre }) }}</span>
+                      <span class="codigo">{{ t('ir_n_paradas', { n: sitio.n }) }}</span>
+                    </span>
+                  </button>
+                </li>
+              }
+              @for (p of s.paradas; track p.id) {
+                <li>
+                  <button type="button" data-test="sugerencia-destino" (click)="elegirDestino(p)">
+                    <span class="sprite" [class.tram]="esTram(p)" aria-hidden="true"></span>
+                    <span class="info">
+                      <span class="nombre">{{ p.nombre }}</span>
+                      <span class="codigo">{{ t('id_parada', { id: codigoVisible(p) }) }}</span>
+                    </span>
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+        }
+      }
+
+      @if (origenIr() && destinoIr()) {
+        @if (cargandoIr() && !filasIr().length) {
+          <p class="tenue">{{ t('ir_buscando') }}</p>
+        } @else if (errorIr() && !filasIr().length) {
+          <p class="error">{{ t('err_servidor') }}</p>
+          <button type="button" class="chip" (click)="reintentarIr()">{{ t('reintentar') }}</button>
+        } @else if (filasIr().length) {
+          @if (errorIr()) {
+            <!-- Como en las llegadas: si falla un refresco, lo de antes se
+                 queda, avisando de que ya no se está actualizando. -->
+            <p class="error" data-test="ir-sin-actualizar">{{ t('ir_sin_actualizar') }}</p>
+          }
+          <ul class="opciones-ir" data-test="opciones-ir">
+            @for (f of filasIr(); track f.linea) {
+              <li>
+                <button type="button" data-test="opcion-ir" (click)="abrirOpcion(f)">
+                  <span class="linea">{{ f.linea }}</span>
+                  <span class="info">
+                    <span class="tramo">
+                      {{ t('ir_sube', { parada: f.sube.nombre }) }}
+                      @if (f.metros > 0) {
+                        <span class="tenue">· {{ t('ir_andando', { d: distanciaTexto(f.metros), m: f.minAndando }) }}</span>
+                      }
+                    </span>
+                    <span class="tramo">
+                      {{ t('ir_baja', { parada: f.baja.nombre }) }}
+                      <span class="tenue">· {{ t('ir_viaje', { n: f.paradas, m: f.minViaje }) }}</span>
+                    </span>
+                    @if (f.proximas.length) {
+                      <span class="proximas-ir">
+                        {{ t('ir_proximos') }}
+                        @for (l of f.proximas; track l.tripId) {
+                          <span class="salida" [class.no-llegas]="l.minutos < f.minAndando"
+                            [attr.title]="l.minutos < f.minAndando ? t('ir_no_llegas') : null">{{ cuando(l) }}</span>
+                        }
+                        {{ t('min') }}
+                      </span>
+                      @if (llegadaIr(f); as hora) {
+                        <span class="llegas-ir">{{ t('ir_llegas', { hora }) }}</span>
+                      }
+                      @if (bandaIr(f); as banda) {
+                        <span class="banda" data-test="banda-ir">{{ banda }}</span>
+                      }
+                    } @else {
+                      <span class="tenue">{{ t('ir_sin_salidas') }}</span>
+                    }
+                  </span>
+                  <span class="flecha" aria-hidden="true">›</span>
+                </button>
+              </li>
+            }
+          </ul>
+        } @else if (!cargandoIr()) {
+          <p class="tenue" data-test="ir-ninguna">{{ t('ir_ninguna') }}</p>
+        }
+        @if (!errorIr() && !(cargandoIr() && !filasIr().length)) {
+          <p class="tenue pie-ir">
+            {{ t('ir_transbordo') }}
+            <a href="https://www.transportforireland.ie/plan-a-journey/" target="_blank" rel="noopener">Journey Planner</a>.
+          </p>
+        }
+      }
+    </section>
     } @else if (modo() === 'cerca') {
     <!-- Cerca de ti: el radar retro con las paradas alrededor. Se localiza al
          entrar en esta pestaña; si ya se concedió el permiso, sin volver a pedir. -->
@@ -545,6 +706,9 @@
       </span>
     </div>
     <p class="codigo">{{ t('id_parada', { id: codigoVisible(parada()!) }) }}</p>
+    <button type="button" class="enlace ir-desde" data-test="ir-desde" (click)="irDesde(parada()!)">
+      {{ t('ir_desde_aqui') }}
+    </button>
 
     @if (error()) {
       <p class="error">{{ error() }}</p>
