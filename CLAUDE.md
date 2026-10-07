@@ -914,6 +914,53 @@ El siguiente salto (las ~5.700 paradas restantes del estático) ya no es
 Dublin Bus urbano: Bus Éireann regional, Irish Rail fuera de Dublín. No hace
 falta.
 
+## Las líneas se cargan enteras, no por frontera (2026-10-07)
+
+Tercera vez del mismo aviso, ahora en Reddit: **"The Maynooth commuter line
+doesn't include Maynooth"**, y "every line I checked has stops missing". Era
+verdad, y era la frontera otra vez, un anillo más afuera: el condado se elegía
+por prefijo `*DB`, que es **solo autobús**. El Luas y el tren solo entraban por
+la caja del centro.
+
+| Línea | En vivo | En el estático |
+|---|---|---|
+| Maynooth (tren) | 7 (hasta Drumcondra) | hasta Maynooth y M3 Parkway |
+| DART | 6 | 31 |
+| Red | 32 andenes, hasta Suir Road | 64 |
+| Green | 24 | 64 |
+
+Más los Dublin Bus que salen a Kildare (`8260DB`: C3-C6, X25-X28…) y Wicklow
+(`8350DB`: Bray, Greystones), cortados en la linde del condado.
+
+La cura deja de elegir por frontera: con `--nucleo`, **toda línea que toca la
+selección entra entera hasta el borde de `CAJA_METRO`**, que es la misma caja
+que `DUBLIN` en `trazados.mjs` (mapa y recorrido acaban en el mismo sitio).
+Medido con `--seco`: +857 paradas (5.428), paradas-por-viaje +12%,
+`patron_parada` de 450.691 a 523.375 filas. Lo que sigue cortado es lo
+interurbano (Cork, Galway, Navan, Drogheda), cuyo nombre ya dice adónde va.
+
+Regla: **si una línea aparece, aparece entera.** Una frontera administrativa
+corta las líneas por donde pasa la frontera, y el usuario lo lee como
+"faltan paradas al azar".
+
+Cargado en producción el 2026-10-07 con el estático del **06-10**: Maynooth
+25 estaciones, DART 32, Red y Green 64, C4 116. Dos cosas de esa carga:
+
+- **El índice local puede ser anterior al código.** La primera pasada se hizo
+  con un `indice/` del 30-09, anterior a `nombre-linea.mjs`, y subió `rutas`
+  con los trenes otra vez como `"rail"`. Si se ha hecho `git pull` de algo que
+  toque `indexar.mjs`, hay que reindexar antes de cargar aunque el estático no
+  haya cambiado.
+- **Una carga entera en hora punta tumba el cron unos minutos.** Son 5 M de
+  filas de upsert y un barrido; la base del plan gratuito se queda sin CPU y
+  `horario_de_trips_en_ventana_json` pasa del `statement_timeout` de 8 s
+  (fijado en el rol `authenticator`). Mismo input, misma función: 2,3 s
+  durante la carga y 0,74 s después. Ya fallaba un ~2% de pasadas antes
+  (24 en 24 h), así que va justa. Se probó empujar la ventana horaria dentro
+  del recorrido (índice `(patron, desfase)` + `LATERAL`) y salió **peor**
+  (5,6 s, 174k buffers): no se tocó. **Cargar fuera de hora punta y lanzar
+  `analyze` de `viaje`, `patron` y `patron_parada` al terminar.**
+
 ## El catálogo de líneas se busca por sitio (2026-10-04)
 
 Con el condado cargado el catálogo pasó a **200 líneas** en chips sueltos, y

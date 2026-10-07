@@ -81,6 +81,33 @@ function leerCaja() {
   return { latMin, latMax, lonMin, lonMax };
 }
 
+/**
+ * Área metropolitana: hasta dónde se completan las líneas con `--nucleo`. Es
+ * la misma caja que `DUBLIN` en trazados.mjs; si cambia una, que cambie la otra.
+ */
+const CAJA_METRO = { latMin: 53.1, latMax: 53.7, lonMin: -6.75, lonMax: -5.95 };
+
+function enCajaMetro(p) {
+  return (
+    p.lat != null && p.lon != null &&
+    p.lat >= CAJA_METRO.latMin && p.lat <= CAJA_METRO.latMax &&
+    p.lon >= CAJA_METRO.lonMin && p.lon <= CAJA_METRO.lonMax
+  );
+}
+
+/** route_id de los viajes que pasan por una parada, leídos del índice. */
+function rutasDeParada(id, tripRuta) {
+  const f = path.join("./indice/paradas", `${id}.jsonl`);
+  if (!fs.existsSync(f)) return [];
+  const rutas = new Set();
+  for (const linea of fs.readFileSync(f, "utf8").split("\n")) {
+    if (!linea.trim()) continue;
+    const routeId = tripRuta[JSON.parse(linea)[0]];
+    if (routeId) rutas.add(routeId);
+  }
+  return [...rutas];
+}
+
 const URL_BASE = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
@@ -353,9 +380,38 @@ async function subirCentro() {
       prefijosNucleo.some((pre) => p.id.startsWith(pre)),
   );
 
+  // Y con `--nucleo`, cada línea que toca lo anterior entra ENTERA hasta el
+  // borde del área metropolitana. Elegir paradas por prefijo o por caja corta
+  // las líneas por donde pase la frontera, no por donde acaban: el 2026-10-07,
+  // en Reddit, "The Maynooth commuter line doesn't include Maynooth", y era
+  // verdad. Del tren de Maynooth había 7 estaciones (hasta Drumcondra), del
+  // DART 6 de 31, de la Red 32 andenes de 64 (hasta Suir Road) y de la Green
+  // 24 de 64: el Luas y Irish Rail solo entraban por la caja del centro, y los
+  // Dublin Bus que salen a Kildare (`8260DB`) o Wicklow (`8350DB`) se cortaban
+  // en la linde del condado.
+  //
+  // El borde es la caja del mapa (`DUBLIN` en trazados.mjs), para que el mapa
+  // y el recorrido de paradas acaben en el mismo sitio. Lo que queda fuera son
+  // los interurbanos (Cork, Galway, Navan...), cuyo nombre ya dice adónde van.
+  // Medido: +857 paradas y +12% de paradas-por-viaje sobre las 4.571.
+  let porCierre = 0;
+  if (NUCLEO) {
+    const elegidas = new Set(dentro.map((p) => p.id));
+    const rutasSemilla = new Set();
+    for (const p of dentro) for (const r of rutasDeParada(p.id, tripRuta)) rutasSemilla.add(r);
+    for (const p of catalogo) {
+      if (elegidas.has(p.id) || !enCajaMetro(p)) continue;
+      if (rutasDeParada(p.id, tripRuta).some((r) => rutasSemilla.has(r))) {
+        dentro.push(p);
+        porCierre++;
+      }
+    }
+  }
+
   console.log(
     (prefijosNucleo.length
-      ? `Núcleo Dublin Bus (${prefijosNucleo.join("*, ")}*) + caja del centro\n`
+      ? `Núcleo Dublin Bus (${prefijosNucleo.join("*, ")}*) + caja del centro` +
+        ` + ${porCierre} paradas para completar sus líneas\n`
       : `Caja lat[${caja.latMin}, ${caja.latMax}] lon[${caja.lonMin}, ${caja.lonMax}]\n`) +
       `${dentro.length} paradas dentro (de ${catalogo.length} con servicio).`,
   );
