@@ -943,6 +943,24 @@ Regla: **si una línea aparece, aparece entera.** Una frontera administrativa
 corta las líneas por donde pasa la frontera, y el usuario lo lee como
 "faltan paradas al azar".
 
+Cargado en producción el 2026-10-07 con el estático del **06-10**: Maynooth
+25 estaciones, DART 32, Red y Green 64, C4 116. Dos cosas de esa carga:
+
+- **El índice local puede ser anterior al código.** La primera pasada se hizo
+  con un `indice/` del 30-09, anterior a `nombre-linea.mjs`, y subió `rutas`
+  con los trenes otra vez como `"rail"`. Si se ha hecho `git pull` de algo que
+  toque `indexar.mjs`, hay que reindexar antes de cargar aunque el estático no
+  haya cambiado.
+- **Una carga entera en hora punta tumba el cron unos minutos.** Son 5 M de
+  filas de upsert y un barrido; la base del plan gratuito se queda sin CPU y
+  `horario_de_trips_en_ventana_json` pasa del `statement_timeout` de 8 s
+  (fijado en el rol `authenticator`). Mismo input, misma función: 2,3 s
+  durante la carga y 0,74 s después. Ya fallaba un ~2% de pasadas antes
+  (24 en 24 h), así que va justa. Se probó empujar la ventana horaria dentro
+  del recorrido (índice `(patron, desfase)` + `LATERAL`) y salió **peor**
+  (5,6 s, 174k buffers): no se tocó. **Cargar fuera de hora punta y lanzar
+  `analyze` de `viaje`, `patron` y `patron_parada` al terminar.**
+
 ## El catálogo de líneas se busca por sitio (2026-10-04)
 
 Con el condado cargado el catálogo pasó a **200 líneas** en chips sueltos, y
