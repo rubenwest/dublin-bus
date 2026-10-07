@@ -914,6 +914,35 @@ El siguiente salto (las ~5.700 paradas restantes del estático) ya no es
 Dublin Bus urbano: Bus Éireann regional, Irish Rail fuera de Dublín. No hace
 falta.
 
+## Las líneas se cargan enteras, no por frontera (2026-10-07)
+
+Tercera vez del mismo aviso, ahora en Reddit: **"The Maynooth commuter line
+doesn't include Maynooth"**, y "every line I checked has stops missing". Era
+verdad, y era la frontera otra vez, un anillo más afuera: el condado se elegía
+por prefijo `*DB`, que es **solo autobús**. El Luas y el tren solo entraban por
+la caja del centro.
+
+| Línea | En vivo | En el estático |
+|---|---|---|
+| Maynooth (tren) | 7 (hasta Drumcondra) | hasta Maynooth y M3 Parkway |
+| DART | 6 | 31 |
+| Red | 32 andenes, hasta Suir Road | 64 |
+| Green | 24 | 64 |
+
+Más los Dublin Bus que salen a Kildare (`8260DB`: C3-C6, X25-X28…) y Wicklow
+(`8350DB`: Bray, Greystones), cortados en la linde del condado.
+
+La cura deja de elegir por frontera: con `--nucleo`, **toda línea que toca la
+selección entra entera hasta el borde de `CAJA_METRO`**, que es la misma caja
+que `DUBLIN` en `trazados.mjs` (mapa y recorrido acaban en el mismo sitio).
+Medido con `--seco`: +857 paradas (5.428), paradas-por-viaje +12%,
+`patron_parada` de 450.691 a 523.375 filas. Lo que sigue cortado es lo
+interurbano (Cork, Galway, Navan, Drogheda), cuyo nombre ya dice adónde va.
+
+Regla: **si una línea aparece, aparece entera.** Una frontera administrativa
+corta las líneas por donde pasa la frontera, y el usuario lo lee como
+"faltan paradas al azar".
+
 ## El catálogo de líneas se busca por sitio (2026-10-04)
 
 Con el condado cargado el catálogo pasó a **200 líneas** en chips sueltos, y
