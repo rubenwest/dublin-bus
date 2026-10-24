@@ -11,6 +11,11 @@ suele llegar 4 min más tarde de lo que dice". Eso requiere guardar histórico.
 
 Si el proyecto se queda en "muestro los minutos", no aporta nada.
 
+**Desde el 2026-10-19 el histórico está PARADO y borrado**: no cabe en el plan
+gratuito de Supabase, y la decisión es no pagar. Ver "El histórico, parado".
+Lo que sigue en este documento sobre `serie`, `fiabilidad` y la banda de
+fiabilidad es cómo funcionaba y cómo volver a encenderlo.
+
 ## Estado actual
 
 **Al día 2026-09-10: 338 paradas en vivo (el centro de Dublín), histórico en 3.**
@@ -220,8 +225,9 @@ franja de las 18. Decisiones que valen la pena recordar:
 - Va aparte del refresco de llegadas y cacheada por parada. Si falla, la
   pantalla sigue dando los minutos: son datos de semanas, no del minuto.
 
-Sale solo en las paradas de `recolectar` (20 desde el 2026-10-04); en las
-demás no aparece nada, que es lo correcto.
+Sale solo en las paradas de `recolectar` (20 del 2026-10-04 al 19; **ninguna
+desde entonces**, ver "El histórico, parado"); en las demás no aparece nada,
+que es lo correcto.
 
 **La PWA se auto-actualiza** (`SwUpdate` en `app.ts`). Antes, tras un despliegue
 el service worker seguía sirviendo la versión vieja hasta cerrar la app del todo
@@ -609,10 +615,10 @@ Blackrock, Dún Laoghaire, Rathmines), oeste (Navan Rd, Liffey Valley, Balfe
 Rd, Blanchardstown), Tallaght y Swords. Cambiar la lista es un `update parada
 set recolectar = ...`; la carga del horario ya las recoge sola.
 
-**6. Retención de `serie`. AHORA ES URGENTE.** No hay poda ni particionado.
-Con 20 paradas son ~83 MB/mes, y el 2026-10-04 la base estaba en 250 MB de
-500: unos tres meses, no seis. Decidir si los tramos crudos viejos se agregan
-y se tiran conviene hacerlo antes, no con el disco al 90%.
+**6. ~~Retención de `serie`~~ HECHA el 2026-10-19 y, el mismo día, el
+histórico entero PARADO**, con la base ya en 889 MB de 500. Ver "El
+histórico, parado" más abajo. La lista del punto 5 es la que habría que
+volver a marcar si algún día se paga el plan.
 
 **7. Una pantalla propia de fiabilidad.** `fiabilidad` ya calcula
 `error_abs_min` y `p90_min` y nadie los enseña. El p90 es la pregunta de quien
@@ -1078,6 +1084,116 @@ queda como está. Ese nombre lo usan `indexar`, `trazados` y `llegadas`; si un
 script nuevo lee `route_short_name`, que lo pase por `nombreLinea` o el mapa
 dejará de casar con el buscador.
 
+## El histórico, parado (2026-10-19)
+
+Con 20 paradas `serie` crecía ~31 MB por día laborable, y la base llegó a
+889 MB con un tope de 500 en el plan gratuito. Ni con la retención de abajo
+(3 días de crudo + archivo) salía a cuenta mantenerlo, y **la decisión fue no
+pagar**: se paró y se borró.
+
+- **Parado:** `update parada set recolectar = false` en las 20. La Edge
+  Function no necesitó redespliegue: sin paradas de histórico no hay
+  observaciones y no llama a `ingerir` (paso 7).
+- **Copia:** `datos/serie-2026-10-19.csv.gz` (gitignorado, 26 MB). Son las
+  1.587.220 filas de `serie`, del 2026-09-04 al 19-10, con todas sus columnas
+  y el `id`, y se comprobó que cuadraba el recuento antes de borrar. Es lo
+  único que queda: el CSV va **solo en este PC**.
+- **Borrado:** `truncate serie restart identity`. La base bajó a **199 MB**
+  (tarda un checkpoint en verse: justo después aún marcaba 715).
+- **Y se volvió a encender sin querer, entre las dos sesiones.** El paro de
+  las 07:40 UTC del 19 lo leyó la sesión de retención como una incidencia
+  (las 20 a `false` de golpe, a la vez que la recarga del estático) y las
+  "restauró" a las 14:21. El `truncate` de la tarde se hizo con la recogida
+  ya encendida otra vez, y `serie` volvió a llenarse hasta el 20 a las
+  07:55: 40.569 filas. Moraleja: **una bandera de producción que cambia sin
+  explicación se pregunta antes de "arreglarla"**, y quien la cambia a
+  propósito lo deja escrito en el momento, no al final.
+- **Limpieza final (2026-10-20):** `recolectar = false` otra vez; esas
+  40.569 filas volcadas con `exportar-serie.mjs` a
+  `datos/serie/serie-2026-10-19.jsonl.gz` (sólo desde las 18:26 del 19, lo
+  anterior está en el CSV) y `serie-2026-10-20.jsonl.gz`; `truncate serie
+  restart identity`, `truncate paso_archivado` (85.320 pasos que seguían
+  alimentando `fiabilidad`), `drop schema mantenimiento cascade`, fuera el
+  cron `podar-serie` (migración `historico_parado`) y la extensión
+  `pgstattuple`. **La base queda en 183 MB** y `fiabilidad` vacía.
+  `podar-historial-cron` se queda: sin él, `cron.job_run_details` vuelve a
+  los 88 MB.
+
+En `datos/serie/` hay también un volcado JSONL por día del 04-09 al 18-10,
+hecho por la sesión de retención antes de la copia CSV: es lo mismo que el
+CSV, en otro formato.
+
+Para volver a encenderlo: marcar `recolectar` en las paradas del punto 5 de
+"Siguiente iteración", volver a programar `podar-serie` (está en la migración
+`retencion_serie`) y lanzar `exportar-serie.mjs` al menos cada 3 días. Con un
+plan de pago, la copia se sube a `serie` y las vistas se rellenan solas.
+
+### Cómo se podaba (por si se vuelve a encender)
+
+La base midió **889 MB con un tope de 500**. En el plan gratuito, pasar de
+500 MB de *database size* (no de disco) pone el proyecto **en solo lectura**:
+`cannot execute INSERT in a read-only transaction`, el cron deja de escribir y
+el histórico se pierde. El 19 aún no estaba aplicado (hay periodo de gracia),
+pero ese día no se mira si está: se actúa.
+
+De dónde salían los 889: `serie` 625 MB, `cron.job_run_details` 88,
+`patron_parada` 106, `viaje` 42. Y de `serie`, 373 MB eran índices:
+
+- **`serie_paso` era un duplicado exacto de `serie_tramo_unico`**, mismas
+  columnas y mismo orden: 127 MB. El planner usaba uno u otro al azar.
+- Los demás estaban hinchados: densidad de hoja del 42-67 % medida con
+  `pgstatindex` (lo sano es ~90). Cada upsert que no es HOT deja entradas en
+  todos los índices.
+- **`serie` crece cuatro veces más de lo estimado**: ~110.000 tramos por día
+  laborable con 20 paradas (unos 31 MB/día con índices), no los 27.000 que
+  salían de los 1.389 tramos/parada/día medidos con las tres primeras. Las 20
+  se eligieron entre las de más autobuses, y se nota.
+
+`cron.job_run_details` guarda una fila por pasada (1.500 al día) y nadie la
+podaba. Es de `supabase_admin`, así que `vacuum full` no se puede, pero
+`postgres` sí puede `truncate`: se copiaron los 3 últimos días a una temporal,
+`truncate` y vuelta a meter. Un `delete` solo no habría bajado el tamaño.
+
+**La idea: `fiabilidad` no necesita el crudo.** Agrega `paso_predicho`, que
+tiene una fila por autobús, parada y día (~7.500 al día, ~1 MB). Así que:
+
+- `paso_archivado` guarda esas filas de los días viejos;
+- `paso_predicho_crudo` es la definición de siempre sobre `serie`;
+- `paso_predicho` = crudo ∪ archivo, con las mismas columnas. `fiabilidad`
+  no se tocó y da lo mismo porque agrega las mismas filas;
+- `podar_serie(3)` (cron `podar-serie`, 03:15 UTC) archiva y borra, día a
+  día y en la misma transacción, todo día de servicio anterior a hoy − 3. Se
+  niega con menos de 2: el día de ayer aún tiene viajes "25:10:00" en curso.
+- `podar-historial-cron` (03:30 UTC) deja 3 días de `cron.job_run_details`.
+
+**Lo que se pierde de los días viejos:** `error_prediccion` y `paso_medido`
+completos, o sea todas las predicciones de cada bus y no solo la que usa
+`fiabilidad`. Si un día cambia la definición (la ventana de 15 min, el
+`sondeos >= 2`), lo archivado no se puede recalcular. Para eso está
+`scripts/exportar-serie.mjs`, que vuelca el crudo a
+`datos/serie/serie-AAAA-MM-DD.jsonl.gz` (~2,5 MB por día laborable) y
+comprueba el recuento. **Hay que lanzarlo antes de que la poda se lleve un
+día**, o sea al menos cada 3 días: hoy la poda no espera a la exportación.
+
+La comprobación: foto de `fiabilidad` con la vista vieja, hasta el 18-10, de
+5 paradas (O'Connell St Upr, Westmoreland, Dorset St, Broadstone, Five
+Lamps), contra lo mismo sacado de archivo + crudo: **915 celdas, 808 con
+n ≥ 12, ninguna diferencia** en ninguna columna. No se hizo de las 20 por lo
+que viene ahora.
+
+**Leer `serie` entera tumba el cron.** La foto de `fiabilidad` y el archivado
+leen el crudo viejo, que no cabe en la caché del plan gratuito: echan de ella
+`patron_parada` y `viaje`, y `horario_de_trips_en_ventana_json` pasa del
+timeout. Las pasadas fallaron del 3-5 % normal al **60 %** mientras duró, y
+espaciar las consultas con pausas de 50 s no lo arregló: la caché tarda más
+en recuperarse. Lo que funciona es terminar rápido y compactar. Corolario: el
+`podar_serie` diario lee un día solo (~16 s), por eso va de madrugada.
+
+Y el conector MCP corta a los 120 s (`statement_timeout` de su sesión, que un
+`set` dentro de una función no amplía) y pg_cron no admite programar un
+trabajo de una sola vez desde aquí. El archivado inicial se hizo un día por
+llamada.
+
 ## Supabase
 
 Proyecto `dublin-bus`, región `eu-west-1` (Irlanda), plan gratuito.
@@ -1095,9 +1211,9 @@ siguiente iteración y ya está hecho, 2026-09-08):
   **Ancho: 4.571 paradas** (Dublin Bus en los cuatro ayuntamientos —
   `8220DB`, `8230DB`, `8240DB`, `8250DB`—, el Luas, Irish Rail y los andenes
   del centro). No cuesta ni una llamada más a la NTA, el feed ya viene entero.
-- `parada.recolectar` → se guarda su histórico en `serie`. **Estrecho: 20
-  paradas** desde el 2026-10-04, porque el histórico es lo único que llena el
-  plan gratuito (100 paradas ≈ 417 MB/mes de 500).
+- `parada.recolectar` → se guarda su histórico en `serie`. **Ninguna desde
+  el 2026-10-19** (fueron 20 desde el 04-10): ni siquiera estrecho cabe en el
+  plan gratuito. Ver "El histórico, parado".
 
 Juntarlas en una sola bandera era lo que impedía ampliar. Separarlas es lo que
 permite "llegadas en vivo, anchas; histórico, estrecho".
@@ -1108,10 +1224,11 @@ permite "llegadas en vivo, anchas; histórico, estrecho".
 | `horario` | **vista**, ya no tabla. Las mismas 5 columnas de siempre, reconstruidas desde `viaje` + `patron_parada` |
 | `patron` / `patron_parada` | un recorrido: qué paradas, en qué orden, y a cuántos segundos de la salida |
 | `viaje` | un `trip_id` = un patrón + el segundo en que sale + su `route_id` |
-| `serie` | los tramos. Es la tabla que crece |
+| `serie` | los tramos. **Vacía y sin recolectar desde el 2026-10-19** |
+| `paso_archivado` | una fila por autobús de los días podados, para `fiabilidad`. Vacía desde el 2026-10-20: ver "El histórico, parado" |
 | `paso_medido` | vista: un bus concreto en una parada, con su retraso ya medido |
 | `error_prediccion` | vista: cada predicción del feed contra lo que pasó |
-| `paso_predicho` | vista: una fila por AUTOBÚS, no por predicción. Ver abajo |
+| `paso_predicho` | vista: una fila por AUTOBÚS, no por predicción. `paso_predicho_crudo` (sobre `serie`) + `paso_archivado`. Ver abajo |
 | `fiabilidad` | vista: sesgo por parada, línea y franja horaria, con su `n` |
 | `linea_catalogo` | vista: una fila por línea con su recorrido, `tipo` y `agencia` del GTFS |
 | `vehiculo` | posiciones GPS, ~800 filas reescritas cada minuto. NO crece |
@@ -1218,6 +1335,7 @@ node scripts\sincronizar.mjs --rutas           sube solo nombres y recorridos de
 node scripts\sincronizar.mjs                   sube el día de hoy a Supabase
 node scripts\sincronizar.mjs --seco            cuenta sin subir
 node scripts\sincronizar.mjs --todo            sube todos los días
+node scripts\exportar-serie.mjs                vuelca el crudo de serie a datos/serie (cada <3 días)
 node scripts\extraer-ca.mjs                    si la NTA renueva el certificado
 node scripts\pruebas.mjs                       pruebas de estadoParada
 ```
