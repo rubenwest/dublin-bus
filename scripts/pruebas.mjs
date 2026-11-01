@@ -17,13 +17,15 @@ import {
   estadoParada,
   estadoParadaPreparado,
   momentoProgramado,
+  llegadaDeViaje,
   prepararUpdates,
+  updatesCompactos,
 } from "./gtfsrt.mjs";
 import { idPatron } from "./patron.mjs";
 
 const SNAPSHOT = "./snapshots/feed-1.json";
 const ORIGEN = "./scripts/gtfsrt.mjs";
-const ESPEJO = "./supabase/functions/recolectar/gtfsrt.mjs";
+const ESPEJOS = ["./supabase/functions/recolectar/gtfsrt.mjs", "./web/src/app/gtfsrt.mjs"];
 
 let fallos = 0;
 
@@ -48,24 +50,28 @@ console.log("\n0. Una sola copia de la lógica");
 const hash = (p) =>
   crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
 
-// Una Edge Function no puede importar del repo, así que el fichero se copia.
-// Comparar comportamiento no basta: dos ficheros pueden coincidir hoy sobre el
-// snapshot y diferir mañana en un caso que no cubrimos. Se comparan los bytes.
-if (fs.existsSync(ORIGEN) && fs.existsSync(ESPEJO)) {
+// Ni la Edge Function ni la web pueden importar del repo, así que el fichero se
+// copia. Comparar comportamiento no basta: dos ficheros pueden coincidir hoy
+// sobre el snapshot y diferir mañana en un caso que no cubrimos. Se comparan los
+// bytes.
+for (const espejo of ESPEJOS) {
+  if (!fs.existsSync(ORIGEN) || !fs.existsSync(espejo)) {
+    fallos++;
+    console.log(`FALLO  falta ${espejo}`);
+    continue;
+  }
   const a = hash(ORIGEN);
-  const b = hash(ESPEJO);
+  const b = hash(espejo);
   if (a === b) {
-    console.log(`  ok   el espejo de la Edge Function es idéntico (${a.slice(0, 12)})`);
+    console.log(`  ok   ${espejo} es idéntico (${a.slice(0, 12)})`);
   } else {
     fallos++;
-    console.log("FALLO  el espejo de la Edge Function ha derivado del original");
+    console.log(`FALLO  ${espejo} ha derivado del original`);
     console.log(`         ${ORIGEN}  ${a.slice(0, 16)}`);
-    console.log(`         ${ESPEJO}  ${b.slice(0, 16)}`);
+    console.log(`         ${espejo}  ${b.slice(0, 16)}`);
     console.log("         se arregla copiando el de scripts encima del otro,");
-    console.log("         y volviendo a desplegar la función.");
+    console.log("         y volviendo a desplegar la función si era el suyo.");
   }
-} else {
-  console.log("  (falta alguno de los dos ficheros)");
 }
 
 // Si vuelve a aparecer una copia suelta, el arreglo es quitarla, no taparla
@@ -301,6 +307,65 @@ console.log("\n7. La hora programada no cambia al cachear el día");
   else console.log("  ok   y siguen coincidiendo pidiéndolos intercalados");
 }
 
+// --- 8. Lo que se guarda en `trip_vivo` da el mismo resultado -----------------
+
+console.log("\n8. Los updates compactos no cambian ningún estado");
+
+if (fs.existsSync(SNAPSHOT)) {
+  const feed = JSON.parse(fs.readFileSync(SNAPSHOT, "utf8"));
+  let combinaciones = 0;
+  let distintas = 0;
+  let enteros = 0;
+  let compactos = 0;
+  for (const e of feed.entity ?? []) {
+    const ups = e.trip_update?.stop_time_update;
+    if (!ups?.length) continue;
+    const c = updatesCompactos(ups);
+    enteros += JSON.stringify(ups).length;
+    compactos += JSON.stringify(c).length;
+    const maxSeq = Math.max(...ups.map((x) => Number(x.stop_sequence)));
+    for (let seq = 1; seq <= maxSeq + 2; seq++) {
+      combinaciones++;
+      if (JSON.stringify(estadoParada(ups, seq)) !== JSON.stringify(estadoParada(c, seq))) distintas++;
+    }
+  }
+  if (distintas) {
+    fallos++;
+    console.log(`FALLO  ${distintas} de ${combinaciones} combinaciones cambian`);
+  } else {
+    console.log(`  ok   ${combinaciones} combinaciones idénticas, de ${enteros} a ${compactos} bytes`);
+  }
+} else {
+  console.log(`  (sin ${SNAPSHOT})`);
+}
+
+console.log("\n9. Una fila de la RPC da la misma llegada que pintaba la web");
+
+{
+  const ahora = new Date("2026-09-04T10:00:00Z");
+  const fila = (extra) => ({
+    trip_id: "t", start_date: "20260904", rel: "SCHEDULED", linea: "E2", vehiculo: null,
+    seq: 20, prog_segs: 11 * 3600 + 10 * 60, updates: [conDelay(18, 120)], ...extra,
+  });
+  comprueba("programado + delay, en hora de Dublín", llegadaDeViaje(fila(), ahora),
+    { minutos: 12, retrasoSegundos: 120, estado: "EN_VIVO", linea: "E2" });
+  comprueba("parada saltada", llegadaDeViaje(fila({
+    updates: [conDelay(18, 120), u(20, { schedule_relationship: "SKIPPED" })],
+  }), ahora), { estado: "SALTADA", retrasoSegundos: 120 });
+  comprueba("viaje cancelado", llegadaDeViaje(fila({ rel: "CANCELED" }), ahora), { estado: "CANCELADO" });
+  comprueba("sin updates aplicables", llegadaDeViaje(fila({ updates: [] }), ahora),
+    { estado: "SOLO_HORARIO", minutos: 10 });
+  const fuera = [
+    llegadaDeViaje(fila({ prog_segs: 13 * 3600 }), ahora),
+    llegadaDeViaje(fila({ updates: [conDelay(18, 46 * 60)] }), ahora),
+  ];
+  if (fuera.some((x) => x !== null)) {
+    fallos++;
+    console.log("FALLO  una llegada fuera de ventana o con delay basura se ha colado");
+  } else {
+    console.log("  ok   fuera de ventana y delay basura no salen");
+  }
+}
 
 console.log(fallos ? `\n${fallos} FALLOS\n` : "\nTodo correcto\n");
 process.exit(fallos ? 1 : 0);

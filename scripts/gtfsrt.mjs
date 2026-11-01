@@ -233,3 +233,71 @@ export function calcularLlegada(tu, seq, progSegs, ahora) {
     routeId: tu.trip.route_id ?? null,
   };
 }
+
+// --- Lo que viaja a la base de datos y vuelve -------------------------------
+
+/**
+ * Los stop_time_update de un trip con lo único que `estadoParada` mira.
+ *
+ * Solo sobrevive lo que la lógica lee: secuencia, relación y el primer delay y
+ * la primera hora de arrival/departure, que es el orden en que los consulta.
+ * Por eso `estadoParada` da lo mismo antes y después, y la prueba lo compara
+ * sobre el snapshot real.
+ */
+export function updatesCompactos(ups) {
+  const salida = [];
+  for (const u of ups ?? []) {
+    const seq = Number(u.stop_sequence);
+    if (Number.isNaN(seq)) continue;
+    const c = { stop_sequence: seq };
+    const rel = u.schedule_relationship ?? "SCHEDULED";
+    if (rel !== "SCHEDULED") c.schedule_relationship = rel;
+    const delay = u.arrival?.delay ?? u.departure?.delay;
+    const time = u.arrival?.time ?? u.departure?.time;
+    if (delay !== undefined || time !== undefined) {
+      c.arrival = {};
+      if (delay !== undefined) c.arrival.delay = Number(delay);
+      if (time !== undefined) c.arrival.time = Number(time);
+    }
+    salida.push(c);
+  }
+  return salida;
+}
+
+/** Ventana de llegadas que se enseña, en minutos desde ahora. */
+export const VENTANA_MIN = [-2, 90];
+
+/**
+ * Una fila de `llegadas_de_parada` -> la llegada que se pinta, o null si cae
+ * fuera de la ventana o trae un delay que es basura del feed.
+ */
+export function llegadaDeViaje(v, ahora) {
+  const s = estadoParada(v.updates, v.seq);
+  const programado = momentoProgramado(v.start_date, v.prog_segs);
+  const estimado = s.horaAbs !== null && s.horaAbs !== undefined
+    ? new Date(s.horaAbs * 1000)
+    : new Date(programado.getTime() + (s.delay ?? 0) * 1000);
+  const minutos = Math.round((estimado.getTime() - ahora.getTime()) / 60000);
+  if (minutos < VENTANA_MIN[0] || minutos > VENTANA_MIN[1]) return null;
+  // Delays de horas son trips viejos sin purgar, no autobuses.
+  if (s.delay !== null && Math.abs(s.delay) > LIMITE_DELAY_SEGUNDOS) return null;
+
+  return {
+    linea: v.linea,
+    minutos,
+    programado: programado.toISOString(),
+    estimado: estimado.toISOString(),
+    retrasoSegundos: s.delay,
+    estado: s.rel === "SKIPPED"
+      ? "SALTADA"
+      : v.rel === "CANCELED"
+      ? "CANCELADO"
+      : s.rel === "NO_DATA"
+      ? "SIN_DATOS"
+      : s.delay === null && s.horaAbs === null
+      ? "SOLO_HORARIO"
+      : "EN_VIVO",
+    tripId: v.trip_id,
+    vehiculo: v.vehiculo ?? null,
+  };
+}
