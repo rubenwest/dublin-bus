@@ -13,6 +13,9 @@ Si el proyecto se queda en "muestro los minutos", no aporta nada.
 
 ## Estado actual
 
+**Al día 2026-11-01: sin histórico, y las llegadas se calculan en la web. Ver
+"El egress: la función no lee nada".** Lo de abajo es la historia.
+
 **Al día 2026-09-10: 338 paradas en vivo (el centro de Dublín), histórico en 3.**
 La web ya no lista paradas a pelo: hay buscador por nombre o línea, chips con
 las líneas de cada parada (que es lo que distingue las siete "O'Connell St") y
@@ -985,6 +988,47 @@ queda como está. Ese nombre lo usan `indexar`, `trazados` y `llegadas`; si un
 script nuevo lee `route_short_name`, que lo pase por `nombreLinea` o el mapa
 dejará de casar con el buscador.
 
+## El egress: la función no lee nada (2026-11-01)
+
+Del 23/10 en adelante **todo** el proyecto devolvió `402 exceed_egress_quota`:
+la Edge Function, la web y hasta `sincronizar` con la clave de servicio. Solo
+siguen vivos el panel y el SQL de la Management API (MCP). El disco no tenía
+nada que ver (183 MB de 500): el egress es una tarifa de datos y borrar no
+devuelve nada. El contador solo vuelve a cero con el ciclo de facturación.
+
+**Lo que lee una Edge Function de la base cuenta como egress.** Cada pasada se
+bajaba `horario_de_trips_en_ventana_json`: ~97.000 filas × 106 bytes, unos
+10 MB estimados en hora punta, más ~250 KB de `parada`. El presupuesto del plan
+gratuito es de **115 KB por pasada** (5 GB entre 43.200).
+
+**El plan gratuito no se va a abandonar: Pro está descartado.** Cachear en
+memoria no sirve: un worker vive 150 s, así que como mucho ahorra la mitad.
+
+Se le dio la vuelta. **El feed va hacia los datos, no los datos hacia el feed:**
+
+```
+pg_cron -> recolectar -> trip_vivo (solo escribe, cero lecturas)
+web -> RPC llegadas_de_parada(parada) -> horario + trip_vivo de ESA parada
+    -> llegadaDeViaje() en el navegador
+```
+
+- `updatesCompactos` deja en `trip_vivo` lo único que `estadoParada` mira: de
+  1,65 MB a 0,59 MB. Comprobado sobre el feed real: 55.719 combinaciones, cero
+  diferencias.
+- `updates_para_parada` recorta en SQL desde la update más cercana hasta la
+  primera con delay o `NO_DATA`, que es donde `estadoParadaPreparado` deja de
+  mirar. Si cambia esa lógica, hay que cambiar este recorte: es el único sitio
+  donde SQL sabe algo de ella.
+- **`gtfsrt.mjs` tiene ahora dos espejos**, función y web, y la prueba compara
+  los dos hashes.
+- `vigilar_llegadas` mira `trip_vivo`: si se renueva y qué parte de sus viajes
+  está en `viaje`, que es justo lo que rompe un estático nuevo.
+- `llegada_actual`, `ingerir`, `serie` y `horario_de_trips_*` ya no los usa la
+  función. El histórico está borrado y `recolectar` es 0 en todas las paradas:
+  se decidió dejar de medir, así que la banda de fiabilidad no sale. Las
+  secciones de arriba que hablan de 20 paradas de histórico describen lo que
+  hubo, no lo que hay.
+
 ## Supabase
 
 Proyecto `dublin-bus`, región `eu-west-1` (Irlanda), plan gratuito.
@@ -1149,8 +1193,8 @@ Cubren tres cosas:
    real, y que sigue detectando las 411 paradas `SKIPPED` que contiene.
 
 **El espejo de la Edge Function.** Una Edge Function no puede importar del
-repo, así que `supabase/functions/recolectar/gtfsrt.mjs` es una copia **byte a
-byte** de `scripts/gtfsrt.mjs`. No se edita a mano: se edita el de `scripts` y
+repo, así que `supabase/functions/recolectar/gtfsrt.mjs` y
+`web/src/app/gtfsrt.mjs` son copias **byte a byte** de `scripts/gtfsrt.mjs`. No se edita a mano: se edita el de `scripts` y
 se copia encima. La prueba compara los **hashes SHA-256**, no el
 comportamiento: dos ficheros pueden coincidir hoy sobre el snapshot y diferir
 mañana en un caso que no cubra.

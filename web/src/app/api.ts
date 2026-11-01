@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, firstValueFrom, retry, throwError, timer } from 'rxjs';
 import { entorno } from './entorno';
+import { llegadaDeViaje, type ViajeDeParada } from './gtfsrt.mjs';
 
 /** Estados que puede tener una llegada. Los tres últimos NO son un bus normal. */
 export type EstadoLlegada =
@@ -121,8 +122,8 @@ interface RecorridoLinea {
 /**
  * Habla directamente con Supabase, sin backend propio.
  *
- * Se puede porque el cron deja las llegadas ya calculadas en `llegada_actual`:
- * el navegador solo lee una tabla. La clave publicable está pensada para vivir
+ * Se puede porque el cron deja el feed guardado en `trip_vivo` y la RPC
+ * `llegadas_de_parada` entrega lo de una parada. La clave publicable está pensada para vivir
  * en el bundle — lo que protege los datos es el RLS, que da lectura pública y
  * ninguna escritura.
  *
@@ -192,29 +193,34 @@ export class Api {
     }));
   }
 
+  /**
+   * Las llegadas se calculan aquí, en el navegador, con el mismo `gtfsrt.mjs`
+   * que usa todo el proyecto. La base de datos solo entrega los viajes vivos que
+   * pasan por esta parada y sus updates ya recortados.
+   */
   async llegadas(stopId: string): Promise<Llegadas | null> {
-    const filas = await firstValueFrom(
-      this.http.get<any[]>(`${entorno.supabaseUrl}/rest/v1/llegada_actual`, {
-        headers: this.cabeceras,
-        params: {
-          select: 'stop_id,generado,feed_ts,llegadas,parada(id,nombre,lat,lon)',
-          stop_id: `eq.${stopId}`,
-        },
-      }),
+    const d = await firstValueFrom(
+      this.http.post<any>(
+        `${entorno.supabaseUrl}/rest/v1/rpc/llegadas_de_parada`,
+        { p_stop: stopId },
+        { headers: this.cabeceras },
+      ),
     );
-    if (!filas.length) return null;
-    const f = filas[0];
+    if (!d?.parada) return null;
+
+    const ahora = new Date();
+    const llegadas = (d.viajes as ViajeDeParada[])
+      .map((v) => llegadaDeViaje(v, ahora))
+      .filter((l): l is NonNullable<typeof l> => l !== null)
+      .sort((a, b) => a.minutos - b.minutos)
+      .slice(0, 15);
 
     return {
-      parada: f.parada
-        ? { ...f.parada, codigo: null, lineas: f.parada.lineas ?? [] }
-        : { id: f.stop_id, codigo: null, nombre: f.stop_id, lat: null, lon: null, lineas: [] },
-      generado: f.generado,
-      feedTs: f.feed_ts ?? null,
-      antiguedadSegundos: f.feed_ts
-        ? Math.max(0, Math.round(Date.now() / 1000 - f.feed_ts))
-        : Math.round((Date.now() - new Date(f.generado).getTime()) / 1000),
-      llegadas: (f.llegadas ?? []) as Llegada[],
+      parada: { ...d.parada, codigo: null, lineas: [] },
+      generado: d.generado ?? ahora.toISOString(),
+      feedTs: d.feed_ts ?? null,
+      antiguedadSegundos: d.feed_ts ? Math.max(0, Math.round(ahora.getTime() / 1000 - d.feed_ts)) : 0,
+      llegadas,
     };
   }
 
