@@ -146,42 +146,19 @@ export class Api {
   }
 
   /**
-   * Las paradas que se muestran en vivo. Son casi 2.000, así que se piden
-   * PAGINADAS: PostgREST devuelve como mucho 1.000 filas y no avisa de que ha
-   * cortado. Con 658 paradas no se notaba; al abrir el núcleo, la web se quedó
-   * enseñando "buscar entre 1000 paradas" y media línea 14 no existía para el
-   * buscador ni para el explorador, sin un solo error en consola.
+   * Las paradas que se muestran en vivo. Vienen de `paradas.json`, servido por
+   * GitHub Pages, y no de Supabase: son 5.400 paradas, ~120 KB comprimidos en
+   * cada apertura de la app, y eran el 85% del egress de una visita. Solo
+   * cambian al recargar el estático (`scripts/paradas-web.mjs`), y el service
+   * worker las guarda hasta el siguiente despliegue.
    */
   async paradas(): Promise<Parada[]> {
-    const PAGINA = 1000;
-    const pedirPagina = (desde: number) =>
-      firstValueFrom(
-        this.http.get<any[]>(`${entorno.supabaseUrl}/rest/v1/parada`, {
-          headers: { ...this.cabeceras, Range: `${desde}-${desde + PAGINA - 1}` },
-          params: {
-            select: 'id,nombre,lat,lon,lineas',
-            en_vivo: 'eq.true',
-            order: 'nombre.asc,id.asc',
-          },
-        }),
-      );
-
-    const [primera, codigos] = await Promise.all([
-      pedirPagina(0),
+    const [filas, codigos] = await Promise.all([
+      firstValueFrom(this.http.get<any[]>('paradas.json')),
       firstValueFrom(this.http.get<Record<string, string>>('codigos-parada.json')).catch(
         () => ({}) as Record<string, string>,
       ),
     ]);
-
-    const filas = primera;
-    // El `order` incluye `id` para que la paginación sea estable: ordenar solo
-    // por nombre deja empates (hay siete "O'Connell St") y una fila podría
-    // colarse en dos páginas o en ninguna.
-    for (let desde = PAGINA; filas.length === desde; desde += PAGINA) {
-      const pagina = await pedirPagina(desde);
-      if (!pagina.length) break;
-      filas.push(...pagina);
-    }
 
     return filas.map((f) => ({
       id: f.id,

@@ -861,7 +861,8 @@ paradas. Las dos paradas de histórico del centro tienen un hueco de diez días
 en `serie` que no se recupera.
 
 La cura es la carga de siempre con el estático nuevo (`indexar`,
-`sincronizar --nucleo`, `trazados`, `codigos-parada`). Tras ella, 1.961 de
+`sincronizar --nucleo`, `trazados`, `codigos-parada` y, desde el 2026-11-02,
+`paradas-web`). Tras ella, 1.961 de
 1.971.
 
 Para que no vuelva a pasar en silencio está `vigilar_llegadas()`, con su cron
@@ -1095,6 +1096,27 @@ web -> RPC llegadas_de_parada(parada) -> horario + trip_vivo de ESA parada
   secciones de arriba que hablan de 20 paradas de histórico describen lo que
   hubo, no lo que hay.
 
+**Lo que queda es la web, y crece con las visitas** (medido el 2026-11-02).
+Las escrituras del cron devuelven 0 bytes (en los logs del gateway: 1.333
+POST a `trip_vivo`, ninguno con cuerpo), así que con nadie mirando el gasto
+es ~0. Lo que se paga es por visita, y PostgREST lo sirve con gzip:
+
+| Petición | Crudo | gzip | Cuándo |
+|---|---|---|---|
+| Lista de paradas (5.433, 6 páginas) | ~670 KB | ~130 KB | cada apertura de la app |
+| `llegadas_de_parada` | 15 KB | 1,4 KB | cada 20 s con la pantalla a la vista |
+
+La lista era el 85% de una visita y solo cambia con el estático, así que
+salió de Supabase: `scripts/paradas-web.mjs` la vuelca de `parada` a
+`web/public/paradas.json` (578 KB, 117 KB con gzip), la sirve GitHub Pages y
+el service worker la guarda en el grupo `app` hasta el siguiente despliegue.
+Una visita queda en unos 20 KB de egress. **Hay que relanzarlo tras cada
+`sincronizar --nucleo`**, como `trazados` y `codigos-parada`: si no, la web
+enseña la lista vieja (no se rompe nada, pero una parada nueva no aparece).
+
+Supabase no avisa antes del tope, y la segunda vez el bloqueo es inmediato:
+el panel de uso de la organización es el único sitio donde verlo venir.
+
 ## Supabase
 
 Proyecto `dublin-bus`, región `eu-west-1` (Irlanda), plan gratuito.
@@ -1227,6 +1249,7 @@ node scripts\llegadas.mjs <parada> .\gtfs      consulta suelta por consola
 node scripts\congelados.mjs .\datos            análisis del histórico (local)
 node scripts\indexar.mjs .\gtfs .\indice       tras bajar estático nuevo
 node scripts\trazados.mjs                      trazado de las líneas para el mapa
+node scripts\paradas-web.mjs                   lista de paradas de la web (tras --nucleo)
 node scripts\sincronizar.mjs --centro --seco   cuenta las paradas del centro
 node scripts\sincronizar.mjs --centro          da de alta el centro (en_vivo)
 node scripts\sincronizar.mjs --nucleo --seco   cuenta las ~4.500 del nucleo (4 prefijos DB)
