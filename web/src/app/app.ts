@@ -1,4 +1,4 @@
-import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, computed, effect, inject, signal, untracked } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { SwUpdate } from '@angular/service-worker';
 import {
@@ -7,6 +7,7 @@ import {
   InfoLinea,
   Llegada,
   Llegadas,
+  OpcionDirecta,
   Parada,
   SentidoLinea,
   TrazadosLinea,
@@ -148,6 +149,51 @@ const RADIO_LINEAS_CERCA = 400;
 /** Tope de líneas en "cerca de ti". En pleno centro pasan sesenta. */
 const MAX_LINEAS_CERCA = 12;
 
+/**
+ * "¿A dónde vas?". Desde dónde se sale: la ubicación (las paradas a un paseo)
+ * o una parada concreta, que es lo que pasa al entrar desde sus llegadas.
+ */
+type OrigenIr = { tipo: 'ubicacion' } | { tipo: 'parada'; parada: Parada };
+
+/**
+ * Adónde se va: una parada (con sus vecinas) o un sitio, que son todas las
+ * paradas cuyo nombre lo lleva. El GTFS no trae barrios, pero los nombres sí:
+ * "Swords" son las doce paradas de Swords.
+ */
+interface DestinoIr {
+  nombre: string;
+  paradas: Parada[];
+  sitio: boolean;
+}
+
+/** Una fila de resultados, ya cruzada con el catálogo y con lo que hay que decir. */
+interface FilaIr {
+  linea: string;
+  sube: Parada;
+  baja: Parada;
+  metros: number;
+  minAndando: number;
+  minViaje: number;
+  paradas: number;
+  proximas: Llegada[];
+  /** La primera salida a la que da tiempo a llegar andando, si hay. */
+  alcanzable: Llegada | null;
+}
+
+/** Hasta dónde se va andando a coger algo: unos seis minutos. */
+const RADIO_ORIGEN = 500;
+/**
+ * Una parada elegida como destino cuenta con sus vecinas: la de enfrente se
+ * llama igual y es la que usa el otro sentido, y un destino "O'Connell St" no
+ * es solo uno de sus siete andenes.
+ */
+const RADIO_ANDEN = 250;
+/** Topes de lo que se manda a la base. La función los aplica también. */
+const MAX_ORIGEN = 40;
+const MAX_DESTINO = 120;
+/** Paso de peatón medio, en metros por minuto (4,8 km/h). */
+const PASO_M_MIN = 80;
+
 /** Distancia en metros entre dos puntos (haversine). */
 function distanciaMetros(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6_371_000;
@@ -226,7 +272,7 @@ export class App implements OnDestroy {
    * Arranca en 'buscar' a propósito, para no plantar el radar en la cara nada
    * más abrir; el radar se ve al tocar su pestaña.
    */
-  readonly modo = signal<'cerca' | 'buscar' | 'lineas'>('buscar');
+  readonly modo = signal<'cerca' | 'buscar' | 'lineas' | 'ir'>('buscar');
 
   /** Línea abierta en el explorador de recorridos de la pantalla inicial. */
   readonly lineaActiva = signal<string | null>(null);
@@ -677,6 +723,286 @@ export class App implements OnDestroy {
     });
   });
 
+  // --- ¿A dónde vas? ---------------------------------------------------------
+  //
+  // Las líneas que llevan de aquí a allí SIN transbordo. Combinar transbordos
+  // es un planificador de rutas, y eso ya lo hacen Google Maps y el Journey
+  // Planner de TFI mejor que nosotros. Lo que no hacen es decir, de cada
+  // línea, cuándo pasa el próximo que de verdad llega y cuánto se suele
+  // equivocar: eso es lo que se enseña aquí.
+
+  readonly origenIr = signal<OrigenIr | null>(null);
+  readonly destinoIr = signal<DestinoIr | null>(null);
+  /** Texto de los dos buscadores de la pantalla. */
+  readonly busquedaOrigen = signal('');
+  readonly busquedaDestino = signal('');
+  readonly opcionesIr = signal<OpcionDirecta[]>([]);
+  readonly cargandoIr = signal(false);
+  readonly errorIr = signal(false);
+  /** Lo que el histórico sabe de las paradas de subida, por parada. */
+  private readonly fiabIr = signal<Record<string, Fiabilidad[]>>({});
+  /** Para descartar respuestas viejas si se cambia de destino a mitad. */
+  private consultaIr = 0;
+
+  readonly paradasPorId = computed(() => new Map(this.paradas().map((p) => [p.id, p])));
+
+  /**
+   * Las paradas de salida con los metros a pie de cada una: las que hay a un
+   * paseo, tanto desde la ubicación como desde una parada. Desde una parada
+   * se probó con solo sus vecinas (250 m) y desde O'Connell St Lwr no salía
+   * nada hacia Swords: los 41 salen de Lower Abbey St, a 400 m. Quien elige
+   * una parada como punto de partida también anda hasta la de al lado, y la
+   * fila dice cuánto.
+   */
+  readonly paradasOrigenIr = computed<{ id: string; m: number }[]>(() => {
+    const o = this.origenIr();
+    if (!o) return [];
+    const centro =
+      o.tipo === 'ubicacion'
+        ? this.ubicacion()
+        : o.parada.lat != null && o.parada.lon != null
+          ? { lat: o.parada.lat, lon: o.parada.lon }
+          : null;
+    if (!centro) return o.tipo === 'parada' ? [{ id: o.parada.id, m: 0 }] : [];
+    return this.cercaDe(centro, RADIO_ORIGEN)
+      .slice(0, MAX_ORIGEN)
+      .map(({ p, metros }) => ({ id: p.id, m: Math.round(metros) }));
+  });
+
+  /** Paradas a menos de `radio` metros de un punto, de la más cercana a la más lejana. */
+  private cercaDe(c: { lat: number; lon: number }, radio: number) {
+    return this.paradas()
+      .filter((p) => p.lat != null && p.lon != null)
+      .map((p) => ({ p, metros: distanciaMetros(c.lat, c.lon, p.lat!, p.lon!) }))
+      .filter((x) => x.metros <= radio)
+      .sort((a, b) => a.metros - b.metros);
+  }
+
+  /** Lo que se ofrece al escribir en un buscador de esta pantalla: unas pocas paradas. */
+  private sugerirParadas(texto: string): Parada[] {
+    const q = normaliza(texto.trim());
+    if (q.length < 2) return [];
+    return this.paradas()
+      .filter(
+        (p) =>
+          normaliza(p.nombre).includes(q) ||
+          (p.codigo?.toLowerCase().includes(q) ?? false),
+      )
+      .slice(0, 8);
+  }
+
+  readonly sugerenciasOrigen = computed(() => this.sugerirParadas(this.busquedaOrigen()));
+
+  /**
+   * Para el destino, además de paradas sueltas se ofrece el sitio entero
+   * ("Todas las paradas de Swords") cuando lo escrito casa con varias. Con
+   * demasiadas no: "Street" son cientos y no es un sitio.
+   */
+  readonly sugerenciasDestino = computed(() => {
+    const texto = this.busquedaDestino().trim();
+    const q = normaliza(texto);
+    const paradas = this.sugerirParadas(texto);
+    let sitio: { nombre: string; n: number } | null = null;
+    if (q.length >= 3) {
+      const n = this.paradas().filter((p) => normaliza(p.nombre).includes(q)).length;
+      if (n >= 2 && n <= MAX_DESTINO) sitio = { nombre: texto, n };
+    }
+    return { sitio, paradas };
+  });
+
+  /**
+   * Las opciones, cruzadas con el catálogo y ordenadas por cuándo llegarías si
+   * sales ya: la que antes te deja allí, no la que menos paradas tiene. Las
+   * que no tienen salida a tiempo van detrás, por duración del viaje.
+   */
+  readonly filasIr = computed<FilaIr[]>(() => {
+    const porId = this.paradasPorId();
+    const filas: FilaIr[] = [];
+    for (const o of this.opcionesIr()) {
+      const sube = porId.get(o.sube);
+      const baja = porId.get(o.baja);
+      if (!sube || !baja) continue;
+      const minAndando = Math.ceil(o.metros / PASO_M_MIN);
+      filas.push({
+        linea: o.linea,
+        sube,
+        baja,
+        metros: o.metros,
+        minAndando,
+        minViaje: Math.max(1, Math.round(o.segs / 60)),
+        paradas: o.paradas,
+        proximas: o.proximas,
+        alcanzable: o.proximas.find((l) => l.minutos >= minAndando) ?? null,
+      });
+    }
+    const llegada = (f: FilaIr) =>
+      f.alcanzable ? f.alcanzable.minutos + f.minViaje : Number.POSITIVE_INFINITY;
+    return filas.sort((a, b) => llegada(a) - llegada(b) || a.minViaje - b.minViaje);
+  });
+
+  /** Cuando hay origen y destino, se pregunta. Y otra vez si cambia cualquiera. */
+  private readonly consultarAlCambiar = effect(() => {
+    const origen = this.paradasOrigenIr();
+    const destino = this.destinoIr();
+    if (!origen.length || !destino) return;
+    untracked(() => void this.consultarIr(origen, destino));
+  });
+
+  /**
+   * Los minutos de las próximas salidas caducan como los de una parada: al
+   * minuto, "sale en 1" ya es mentira. Se repregunta cada minuto (lo que tarda
+   * el cron en reescribir las llegadas) mientras la pantalla está a la vista,
+   * y no en el bolsillo ni con una parada abierta encima.
+   */
+  private readonly refrescoIr = effect((alLimpiar) => {
+    if (this.modo() !== 'ir' || this.parada() || !this.destinoIr()) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') this.reintentarIr();
+    }, 60_000);
+    alLimpiar(() => clearInterval(id));
+  });
+
+  private async consultarIr(origen: { id: string; m: number }[], destino: DestinoIr): Promise<void> {
+    const n = ++this.consultaIr;
+    this.cargandoIr.set(true);
+    this.errorIr.set(false);
+    try {
+      const opciones = await this.api.lineasDirectas(
+        origen,
+        destino.paradas.slice(0, MAX_DESTINO).map((p) => p.id),
+      );
+      if (n !== this.consultaIr) return;
+      this.opcionesIr.set(opciones);
+      this.cargarFiabIr(opciones);
+    } catch {
+      if (n === this.consultaIr) this.errorIr.set(true);
+    } finally {
+      if (n === this.consultaIr) this.cargandoIr.set(false);
+    }
+  }
+
+  reintentarIr(): void {
+    const d = this.destinoIr();
+    const o = this.paradasOrigenIr();
+    if (d && o.length) void this.consultarIr(o, d);
+  }
+
+  /** El histórico de cada parada de subida. Va aparte: si falla, no falta nada más. */
+  private cargarFiabIr(opciones: OpcionDirecta[]): void {
+    for (const id of new Set(opciones.map((o) => o.sube))) {
+      if (this.fiabIr()[id]) continue;
+      this.api
+        .fiabilidad(id)
+        .then((filas) => this.fiabIr.update((f) => ({ ...f, [id]: filas })))
+        .catch(() => {});
+    }
+  }
+
+  /**
+   * La banda de fiabilidad de la salida a la que da tiempo, como en las
+   * llegadas de una parada. Hoy solo hay histórico en veinte paradas, así que
+   * casi siempre calla, que es lo correcto.
+   */
+  bandaIr(f: FilaIr): string | null {
+    const l = f.alcanzable;
+    if (!l) return null;
+    const franja = this.franjaDe(l);
+    const c = (this.fiabIr()[f.sube.id] ?? []).find(
+      (x) => x.linea === f.linea && x.franjaHora === franja,
+    );
+    if (!c) return null;
+    const m = Math.round(c.sesgoMin);
+    return m === 0
+      ? this.t('fiab_acierta')
+      : m > 0
+        ? this.t('fiab_tarde', { m })
+        : this.t('fiab_pronto', { m: Math.abs(m) });
+  }
+
+  /** "Llegas ~09:14": la salida a la que da tiempo más lo que dura el viaje. */
+  llegadaIr(f: FilaIr): string | null {
+    const l = f.alcanzable;
+    if (!l) return null;
+    const sale = new Date(l.estado === 'EN_VIVO' ? l.estimado : l.programado).getTime();
+    return this.hora(new Date(sale + f.minViaje * 60_000).toISOString());
+  }
+
+  /** Abre la pestaña. Si ya se sabe dónde estás, sales de ahí. */
+  verIr(): void {
+    this.cerrarLinea();
+    this.modo.set('ir');
+    if (!this.origenIr() && this.estadoGeo() === 'ok') this.origenIr.set({ tipo: 'ubicacion' });
+  }
+
+  /** Desde las llegadas de una parada: "¿a dónde vas desde aquí?". */
+  irDesde(p: Parada): void {
+    this.volver();
+    this.origenIr.set({ tipo: 'parada', parada: p });
+    this.verIr();
+  }
+
+  usarUbicacionIr(): void {
+    this.origenIr.set({ tipo: 'ubicacion' });
+    this.busquedaOrigen.set('');
+    if (this.estadoGeo() !== 'ok') this.ubicar();
+  }
+
+  elegirOrigen(p: Parada): void {
+    this.origenIr.set({ tipo: 'parada', parada: p });
+    this.busquedaOrigen.set('');
+  }
+
+  cambiarOrigen(): void {
+    this.origenIr.set(null);
+  }
+
+  elegirDestino(p: Parada): void {
+    // Con sus vecinas: el destino "O'Connell St" no es solo uno de sus andenes.
+    const vecinas =
+      p.lat != null && p.lon != null
+        ? this.cercaDe({ lat: p.lat, lon: p.lon }, RADIO_ANDEN).map((x) => x.p)
+        : [p];
+    this.destinoIr.set({ nombre: p.nombre, paradas: vecinas, sitio: false });
+    this.busquedaDestino.set('');
+  }
+
+  elegirDestinoSitio(texto: string): void {
+    const q = normaliza(texto.trim());
+    const paradas = this.paradas().filter((p) => normaliza(p.nombre).includes(q));
+    this.destinoIr.set({ nombre: texto.trim(), paradas, sitio: true });
+    this.busquedaDestino.set('');
+  }
+
+  cambiarDestino(): void {
+    this.destinoIr.set(null);
+    this.opcionesIr.set([]);
+    this.errorIr.set(false);
+    this.consultaIr++;
+    this.cargandoIr.set(false);
+  }
+
+  /** Se va a las llegadas de la parada de subida, ya filtradas a esa línea. */
+  abrirOpcion(f: FilaIr): void {
+    this.seleccionar(f.sube);
+    // Sin guardarlo: el filtro guardado de esa parada es del usuario, y esto
+    // es solo para llegar con la línea a la vista.
+    this.lineasElegidas.set([f.linea]);
+  }
+
+  /** "Cerca de ti" / "Buscar parada" / …, para las migas. */
+  nombreModo(): string {
+    switch (this.modo()) {
+      case 'cerca':
+        return this.t('cerca');
+      case 'lineas':
+        return this.t('lineas_modo');
+      case 'ir':
+        return this.t('ir_modo');
+      default:
+        return this.t('buscar');
+    }
+  }
+
   // --- Feedback -------------------------------------------------------------
 
   /** El panel de feedback está abierto. */
@@ -809,6 +1135,8 @@ export class App implements OnDestroy {
     this.lineasElegidas.set([]);
     this.sinTope.set(false);
     localStorage.removeItem(CLAVE_ULTIMA);
+    // De vuelta de una parada a "¿A dónde vas?": los minutos de antes ya no valen.
+    if (this.modo() === 'ir') this.reintentarIr();
   }
 
   /** Vuelve al inicio completo, cerrando también un recorrido abierto. */
@@ -1042,6 +1370,9 @@ export class App implements OnDestroy {
       (pos) => {
         this.ubicacion.set({ lat: pos.coords.latitude, lon: pos.coords.longitude });
         this.estadoGeo.set('ok');
+        // Si se abrió "¿A dónde vas?" antes de que llegara la ubicación, se
+        // sale de aquí: es lo que se habría elegido de haberla tenido.
+        if (this.modo() === 'ir' && !this.origenIr()) this.origenIr.set({ tipo: 'ubicacion' });
         try {
           localStorage.setItem(CLAVE_GEO, '1');
         } catch {
@@ -1183,6 +1514,10 @@ export class App implements OnDestroy {
   }
 
   private alCambiarVisibilidad(): void {
+    // "¿A dónde vas?" sacado del bolsillo: lo que hay en pantalla es de antes.
+    if (!this.parada() && this.modo() === 'ir' && document.visibilityState === 'visible') {
+      this.reintentarIr();
+    }
     if (!this.parada()) return;
     if (document.visibilityState === 'visible') {
       void this.refrescar();
