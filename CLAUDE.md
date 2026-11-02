@@ -874,6 +874,25 @@ y manda un correo por Resend (mismo patrón que `avisar_feedback`) si:
 
 Un correo por motivo cada 12 h; el estado (`alerta_estado`) se borra al
 recuperarse. `select vigilar_llegadas(1.01)` fuerza el aviso para probarlo.
+(Desde el 2026-11-01 mira `trip_vivo`, no `llegada_actual`: ver "El egress".)
+
+**Segunda vez, 2026-11-02**, y esta vez el vigilante sí avisó (08:00). La
+NTA publicó un estático el 31-10 mientras el proyecto estaba en 402, y al
+levantarse la restricción solo casaban los 157 viajes del Luas de 1.957.
+Carga con el estático del 31-10: Dublin Bus 645/645, Go-Ahead 329/329, Luas
+175/175; lo que no casa es Bus Éireann regional e Irish Rail de fuera, que no
+se cargan. Dos cosas de esa carga:
+
+- **Ya se puede cargar en hora punta.** El aviso de "cargar de madrugada"
+  venía de que la carga ahogaba la RPC del horario que leía el cron, y desde
+  `trip_vivo` el cron no lee nada. Se cargó a las 08:09 de un lunes sin que
+  fallara una pasada.
+- **`limpiar_horario` dio `statement timeout` desde `sincronizar`** (127.129
+  viajes viejos que borrar, con el timeout de la API). La subida ya estaba
+  entera, así que no rompe nada: conviven las dos cargas. Se relanza desde el
+  SQL del panel o del MCP, que tiene más margen, con la marca `cargado` de la
+  carga nueva: `select limpiar_horario('<cargado>')`, y luego `analyze` de
+  `viaje`, `patron` y `patron_parada`.
 
 ## El condado entero (2026-10-04)
 
