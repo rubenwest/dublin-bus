@@ -11,6 +11,7 @@
           "/index.html",
           "/manifest.webmanifest",
           "/codigos-parada.json",
+          "/paradas.json",
           "/*.css",
           "/*.js"
         ]
