@@ -3,8 +3,8 @@
  *
  * La clave publicable va aquí a propósito: está diseñada para vivir en el
  * bundle de un navegador. Lo que protege los datos no es esconderla, es el
- * RLS — `parada`, `llegada_actual`, `serie` y `horario` dan lectura pública y
- * no tienen ninguna política de escritura.
+ * RLS — `parada`, `serie` y `horario` dan lectura pública y no tienen ninguna
+ * política de escritura. `trip_vivo` no se lee directo, solo por su RPC.
  *
  * Lo que NO puede aparecer nunca aquí: la clave `sb_secret_` de Supabase (se
  * salta el RLS) y la `x-api-key` de la NTA.

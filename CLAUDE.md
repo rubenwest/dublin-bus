@@ -18,6 +18,9 @@ fiabilidad es cómo funcionaba y cómo volver a encenderlo.
 
 ## Estado actual
 
+**Al día 2026-11-01: sin histórico, y las llegadas se calculan en la web. Ver
+"El egress: la función no lee nada".** Lo de abajo es la historia.
+
 **Al día 2026-09-10: 338 paradas en vivo (el centro de Dublín), histórico en 3.**
 La web ya no lista paradas a pelo: hay buscador por nombre o línea, chips con
 las líneas de cada parada (que es lo que distingue las siete "O'Connell St") y
@@ -864,7 +867,8 @@ paradas. Las dos paradas de histórico del centro tienen un hueco de diez días
 en `serie` que no se recupera.
 
 La cura es la carga de siempre con el estático nuevo (`indexar`,
-`sincronizar --nucleo`, `trazados`, `codigos-parada`). Tras ella, 1.961 de
+`sincronizar --nucleo`, `trazados`, `codigos-parada` y, desde el 2026-11-02,
+`paradas-web`). Tras ella, 1.961 de
 1.971.
 
 Para que no vuelva a pasar en silencio está `vigilar_llegadas()`, con su cron
@@ -877,6 +881,25 @@ y manda un correo por Resend (mismo patrón que `avisar_feedback`) si:
 
 Un correo por motivo cada 12 h; el estado (`alerta_estado`) se borra al
 recuperarse. `select vigilar_llegadas(1.01)` fuerza el aviso para probarlo.
+(Desde el 2026-11-01 mira `trip_vivo`, no `llegada_actual`: ver "El egress".)
+
+**Segunda vez, 2026-11-02**, y esta vez el vigilante sí avisó (08:00). La
+NTA publicó un estático el 31-10 mientras el proyecto estaba en 402, y al
+levantarse la restricción solo casaban los 157 viajes del Luas de 1.957.
+Carga con el estático del 31-10: Dublin Bus 645/645, Go-Ahead 329/329, Luas
+175/175; lo que no casa es Bus Éireann regional e Irish Rail de fuera, que no
+se cargan. Dos cosas de esa carga:
+
+- **Ya se puede cargar en hora punta.** El aviso de "cargar de madrugada"
+  venía de que la carga ahogaba la RPC del horario que leía el cron, y desde
+  `trip_vivo` el cron no lee nada. Se cargó a las 08:09 de un lunes sin que
+  fallara una pasada.
+- **`limpiar_horario` dio `statement timeout` desde `sincronizar`** (127.129
+  viajes viejos que borrar, con el timeout de la API). La subida ya estaba
+  entera, así que no rompe nada: conviven las dos cargas. Se relanza desde el
+  SQL del panel o del MCP, que tiene más margen, con la marca `cargado` de la
+  carga nueva: `select limpiar_horario('<cargado>')`, y luego `analyze` de
+  `viaje`, `patron` y `patron_parada`.
 
 ## El estático se actualiza solo (2026-11-10)
 
@@ -1229,61 +1252,67 @@ Y el conector MCP corta a los 120 s (`statement_timeout` de su sesión, que un
 trabajo de una sola vez desde aquí. El archivado inicial se hizo un día por
 llamada.
 
-## Bloqueado por egress (2026-10-24)
+## El egress: la función no lee nada (2026-11-01)
 
-**El techo que nos cerró no fue el tamaño de la base, fue el ancho de
-banda.** Desde el 2026-10-24 a las ~05:00 UTC Supabase responde **402**
-(`exceed_egress_quota`) a todo el proyecto: la web, la Edge Function y el
-cron. Los correos de `noreply@supabase.com`:
+Del 23/10 en adelante **todo** el proyecto devolvió `402 exceed_egress_quota`:
+la Edge Function, la web y hasta `sincronizar` con la clave de servicio. Solo
+siguen vivos el panel y el SQL de la Management API (MCP). El disco no tenía
+nada que ver (183 MB de 500): el egress es una tarifa de datos y borrar no
+devuelve nada. El contador solo vuelve a cero con el ciclo de facturación.
 
-| Fecha | Egress | Qué dice |
-|---|---|---|
-| 11-10 | — | cuota superada, periodo de gracia hasta el 11-11 |
-| 20-10 | 11,59 GB de 5,5 | gracia recortada al 23-10 |
-| 23-10 | 13,91 GB de 5,5 | restringido hasta que se rellene la cuota, **el 1-11** |
+**Lo que lee una Edge Function de la base cuenta como egress.** Cada pasada se
+bajaba `horario_de_trips_en_ventana_json`: ~97.000 filas × 106 bytes, unos
+10 MB estimados en hora punta, más ~250 KB de `parada`. El presupuesto del plan
+gratuito es de **115 KB por pasada** (5 GB entre 43.200).
 
-Solo hay dos salidas: pasar a Pro (25 $/mes, 250 GB) o esperar al 1 de
-noviembre. Borrar datos no sirve de nada: la base está en 184 MB. Y ojo,
-**la segunda vez no hay periodo de gracia**: tras el 1-11, si se vuelve a
-pasar de 5,5 GB en el mes, el bloqueo es inmediato.
+**El plan gratuito no se va a abandonar: Pro está descartado.** Cachear en
+memoria no sirve: un worker vive 150 s, así que como mucho ahorra la mitad.
 
-**El egress lo genera nuestro propio cron, no la web.** En los logs del
-gateway del 22-10 todas las peticiones llevan el user-agent de Deno, o sea
-que son de la Edge Function. El egress de la base cuenta los datos que
-PostgREST devuelve, también a una Edge Function del mismo proyecto. Medido
-el 23-10 a las 22:41 UTC, con 465 trips vivos (de noche, pocos):
+Se le dio la vuelta. **El feed va hacia los datos, no los datos hacia el feed:**
 
-| Lectura por pasada (1/min) | Bytes en crudo |
-|---|---|
-| `horario_de_trips_en_ventana_json` | **2.054.943** (~40 filas por trip) |
-| `parada` (las 5.431 en vivo, paginada) | 352.579 |
-| `ruta` | 16.033 |
+```
+pg_cron -> recolectar -> trip_vivo (solo escribe, cero lecturas)
+web -> RPC llegadas_de_parada(parada) -> horario + trip_vivo de ESA parada
+    -> llegadaDeViaje() en el navegador
+```
 
-En hora punta hay ~3.100 trips vivos, así que el horario son del orden de
-**10-14 MB por pasada**. Que el total salga en "solo" ~0,6 GB/día indica que
-se cuenta comprimido (gzip). El salto vino con el condado entero (04-10) y
-las líneas enteras (07-10): más paradas en vivo son más pares (trip, parada)
-en cada respuesta. **"Llegadas en vivo, anchas" no cuesta llamadas a la NTA,
-pero sí egress**, y eso este documento no lo había medido.
+- `updatesCompactos` deja en `trip_vivo` lo único que `estadoParada` mira: de
+  1,65 MB a 0,59 MB. Comprobado sobre el feed real: 55.719 combinaciones, cero
+  diferencias.
+- `updates_para_parada` recorta en SQL desde la update más cercana hasta la
+  primera con delay o `NO_DATA`, que es donde `estadoParadaPreparado` deja de
+  mirar. Si cambia esa lógica, hay que cambiar este recorte: es el único sitio
+  donde SQL sabe algo de ella.
+- **`gtfsrt.mjs` tiene ahora dos espejos**, función y web, y la prueba compara
+  los dos hashes.
+- `vigilar_llegadas` mira `trip_vivo`: si se renueva y qué parte de sus viajes
+  está en `viaje`, que es justo lo que rompe un estático nuevo.
+- `llegada_actual`, `ingerir`, `serie` y `horario_de_trips_*` ya no los usa la
+  función. El histórico está borrado y `recolectar` es 0 en todas las paradas:
+  se decidió dejar de medir, así que la banda de fiabilidad no sale. Las
+  secciones de arriba que hablan de 20 paradas de histórico describen lo que
+  hubo, no lo que hay.
 
-Para que no vuelva a pasar en noviembre, el egress diario tiene que bajar
-de ~0,6 GB a menos de ~0,15 GB (5,5 GB / 31 días, con margen). Opciones,
-de menos a más trabajo:
+**Lo que queda es la web, y crece con las visitas** (medido el 2026-11-02).
+Las escrituras del cron devuelven 0 bytes (en los logs del gateway: 1.333
+POST a `trip_vivo`, ninguno con cuerpo), así que con nadie mirando el gasto
+es ~0. Lo que se paga es por visita, y PostgREST lo sirve con gzip:
 
-- **Cron cada 2-3 minutos** en vez de cada minuto: divide el egress entre 2-3.
-  Cambia lo que ve el usuario (llegadas de hasta 2-3 min de antigüedad).
-- **Menos paradas `en_vivo`**: el coste es proporcional a los pares
-  (trip, parada).
-- **Recortar la ventana del horario**: hoy va de −47 a +135 min (90 de
-  llegadas más 45 de margen por cada lado); el margen superior de 45 min
-  solo cubre buses que van 45 min adelantados. Bajarlo a 10 min quita ~20 %.
-- **Respuesta compacta** (arrays en vez de objetos con claves, sin
-  `route_id` repetido): mucho menos en crudo, pero tras el gzip gana poco.
-- **No mandar el horario a la función**: que la función mande a Postgres los
-  updates del feed (eso es ingress, gratis) y el cruce se haga en SQL. Es lo
-  único que lo arregla de raíz, pero duplica en SQL parte de `estadoParada`,
-  que este proyecto insiste en tener en una sola copia.
-- Pasar a Pro.
+| Petición | Crudo | gzip | Cuándo |
+|---|---|---|---|
+| Lista de paradas (5.433, 6 páginas) | ~670 KB | ~130 KB | cada apertura de la app |
+| `llegadas_de_parada` | 15 KB | 1,4 KB | cada 20 s con la pantalla a la vista |
+
+La lista era el 85% de una visita y solo cambia con el estático, así que
+salió de Supabase: `scripts/paradas-web.mjs` la vuelca de `parada` a
+`web/public/paradas.json` (578 KB, 117 KB con gzip), la sirve GitHub Pages y
+el service worker la guarda en el grupo `app` hasta el siguiente despliegue.
+Una visita queda en unos 20 KB de egress. **Hay que relanzarlo tras cada
+`sincronizar --nucleo`**, como `trazados` y `codigos-parada`: si no, la web
+enseña la lista vieja (no se rompe nada, pero una parada nueva no aparece).
+
+Supabase no avisa antes del tope, y la segunda vez el bloqueo es inmediato:
+el panel de uso de la organización es el único sitio donde verlo venir.
 
 ## Supabase
 
@@ -1418,6 +1447,7 @@ node scripts\llegadas.mjs <parada> .\gtfs      consulta suelta por consola
 node scripts\congelados.mjs .\datos            análisis del histórico (local)
 node scripts\indexar.mjs .\gtfs .\indice       tras bajar estático nuevo
 node scripts\trazados.mjs                      trazado de las líneas para el mapa
+node scripts\paradas-web.mjs                   lista de paradas de la web (tras --nucleo)
 node scripts\sincronizar.mjs --centro --seco   cuenta las paradas del centro
 node scripts\sincronizar.mjs --centro          da de alta el centro (en_vivo)
 node scripts\sincronizar.mjs --nucleo --seco   cuenta las ~4.500 del nucleo (4 prefijos DB)
@@ -1451,8 +1481,8 @@ Cubren tres cosas:
    real, y que sigue detectando las 411 paradas `SKIPPED` que contiene.
 
 **El espejo de la Edge Function.** Una Edge Function no puede importar del
-repo, así que `supabase/functions/recolectar/gtfsrt.mjs` es una copia **byte a
-byte** de `scripts/gtfsrt.mjs`. No se edita a mano: se edita el de `scripts` y
+repo, así que `supabase/functions/recolectar/gtfsrt.mjs` y
+`web/src/app/gtfsrt.mjs` son copias **byte a byte** de `scripts/gtfsrt.mjs`. No se edita a mano: se edita el de `scripts` y
 se copia encima. La prueba compara los **hashes SHA-256**, no el
 comportamiento: dos ficheros pueden coincidir hoy sobre el snapshot y diferir
 mañana en un caso que no cubra.

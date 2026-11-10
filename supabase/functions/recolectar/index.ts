@@ -8,12 +8,11 @@
  * cada 30-60s para todos los usuarios juntos, y dos procesos sondeando a la
  * vez bastan para que devuelva HTTP 429.
  *
- * Recorre TRIPS VIVOS -> SUS PARADAS, no paradas -> trips. El feed ya viene
- * entero (~2.800 trips), así que abrir más paradas de llegadas en vivo no
- * cuesta ni una llamada más ni casi cómputo: solo se tira menos. Dos costes
- * separados en la tabla `parada`:
- *   en_vivo    -> se muestra en la web; se le reescribe `llegada_actual` (ancho)
- *   recolectar -> se guarda su histórico en `serie` vía `ingerir` (estrecho)
+ * Solo ESCRIBE: deja el feed en `trip_vivo` y las posiciones en `vehiculo`, y
+ * no lee nada de la base de datos. Es a propósito. Leer cuenta como egress
+ * aunque quien lee sea esta función, y bajarse el horario en cada pasada eran
+ * ~10 MB por minuto contra los 5 GB al mes del plan gratuito: agotó la cuota y
+ * Supabase dejó la app en 402. Ver "El egress" en CLAUDE.md.
  *
  * Secreto que necesita: NTA_API_KEY
  */
@@ -23,31 +22,21 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // Es el MISMO fichero que scripts/gtfsrt.mjs, copiado byte a byte porque una
 // Edge Function no puede importar del repo. No editar aquí: editar el de
 // scripts y volver a copiar. scripts/pruebas.mjs compara los hashes.
-import {
-  estadoParadaPreparado,
-  fechaISO,
-  LIMITE_DELAY_SEGUNDOS,
-  momentoProgramado,
-  prepararUpdates,
-} from "./gtfsrt.mjs";
+import { updatesCompactos } from "./gtfsrt.mjs";
 
 const FEED_URL =
   "https://api.nationaltransport.ie/gtfsr/v2/TripUpdates?format=json";
 /**
  * Posiciones GPS. Es una segunda llamada por pasada, y el fair usage de la NTA
  * es real: se pide DESPUÉS de haber guardado todo lo demás y con menos
- * reintentos, para que un 429 aquí no toque ni el histórico ni las llegadas.
+ * reintentos, para que un 429 aquí no toque las llegadas.
  */
 const VEHICULOS_URL =
   "https://api.nationaltransport.ie/gtfsr/v2/Vehicles?format=json";
 
 const TIMEOUT_MS = 40_000;
 const REINTENTOS = 4;
-/** Ventana de llegadas que se guarda en la caché. */
-const VENTANA_MIN = [-2, 90];
-/** Margen de horario para no perder buses con retraso o adelanto admisible. */
-const MARGEN_HORARIO_SEGUNDOS = LIMITE_DELAY_SEGUNDOS;
-/** upsert de la caché por lotes: con cientos de paradas el body puede crecer. */
+/** upsert por lotes: con miles de filas el body puede crecer. */
 const LOTE_CACHE = 500;
 
 const NTA_API_KEY = Deno.env.get("NTA_API_KEY");
@@ -124,199 +113,52 @@ Deno.serve(async (_req) => {
   }
 
   try {
-    // 1. Qué paradas nos importan, y para qué. Se lee en cada pasada a
-    //    propósito: abrir una parada es un INSERT, no un despliegue.
-    //
-    //    Y se lee PAGINADO, que no es un adorno: PostgREST corta en 1.000 filas
-    //    y no avisa. Con 658 paradas no se notaba; al pasar a 1.968 la función
-    //    seguía devolviendo 200 y refrescando... solo 1.000 paradas, dejando
-    //    casi la mitad de la ciudad con datos viejos y sin un solo error.
-    const paradas = [];
-    for (let desde = 0; ; desde += 1000) {
-      const { data, error: e1 } = await supabase
-        .from("parada").select("id, en_vivo, recolectar")
-        .or("en_vivo.eq.true,recolectar.eq.true")
-        .order("id")
-        .range(desde, desde + 999);
-      if (e1) throw new Error(`leyendo paradas: ${e1.message}`);
-      if (!data?.length) break;
-      paradas.push(...data);
-      if (data.length < 1000) break;
-    }
-    if (!paradas?.length) {
-      return Response.json({ ok: true, aviso: "ninguna parada en_vivo ni recolectar" });
-    }
-    const enVivo = new Set(paradas.filter((p) => p.en_vivo).map((p) => p.id));
-    const historico = new Set(paradas.filter((p) => p.recolectar).map((p) => p.id));
-
-    // 2. Nombres de línea. El feed trae route_id crudos ("1 F1 a"); en pantalla
-    //    tiene que poner "F1". Son ~403 filas, caben de una.
-    const nombreRuta = new Map();
-    {
-      const { data, error } = await supabase.from("ruta").select("id, nombre");
-      if (error) throw new Error(`leyendo rutas: ${error.message}`);
-      for (const r of data ?? []) nombreRuta.set(r.id, r.nombre);
-    }
-
-    // 3. El feed. Una sola llamada a la NTA.
+    // 1. El feed. Una sola llamada a la NTA.
     const { feed, intentos } = await pedirFeed();
     const feedTs = Number(feed.header?.timestamp) || Math.floor(Date.now() / 1000);
-    const momento = new Date(feedTs * 1000).toISOString();
     const ahora = new Date();
 
-    // 4. Trips vivos ahora mismo: trip_id -> trip_update, ya filtrados.
-    //    ADDED viene sin trip_id; DELETED el operador quiere que desaparezca.
-    const tuPorTrip = new Map();
+    // 2. Trips vivos ahora mismo. ADDED viene sin trip_id y sin `start_date`
+    //    no hay hora programada; DELETED el operador quiere que desaparezca.
+    const filasPorTrip = new Map();
     for (const e of feed.entity ?? []) {
       const tu = e.trip_update;
       const tripId = tu?.trip?.trip_id;
-      if (!tripId) continue;
-      if ((tu.trip.schedule_relationship ?? "SCHEDULED") === "DELETED") continue;
-      tuPorTrip.set(tripId, tu);
-    }
-    const vivos = [...tuPorTrip.keys()];
-
-    // 5. El horario SOLO de esos trips Y de las paradas que servimos. Aunque
-    //    haya ~2.800 trips vivos, transferir todas sus paradas excede el límite
-    //    de cómputo de Edge. El filtro de parada se hace en PostgreSQL, antes de
-    //    formar el JSON que cruza la function.
-    const indicePorTrip = new Map();
-    if (vivos.length) {
-      const stopIds = [...new Set([...enVivo, ...historico])];
-      const desde = new Date(
-        ahora.getTime() + (VENTANA_MIN[0] * 60 - MARGEN_HORARIO_SEGUNDOS) * 1000,
-      ).toISOString();
-      const hasta = new Date(
-        ahora.getTime() + (VENTANA_MIN[1] * 60 + MARGEN_HORARIO_SEGUNDOS) * 1000,
-      ).toISOString();
-      const viajes = vivos.map((trip_id) => ({
-        trip_id,
-        start_date: tuPorTrip.get(trip_id).trip.start_date,
-      }));
-      // SQL filtra también por la ventana horaria antes de agregar: evita el
-      // límite tabular de PostgREST sin traer paradas ya pasadas o lejanas.
-      const { data: filasHorario, error: e2 } = await supabase
-        .rpc("horario_de_trips_en_ventana_json", {
-          p_trip_ids: vivos,
-          p_viajes: viajes,
-          p_stop_ids: stopIds,
-          p_desde: desde,
-          p_hasta: hasta,
-        });
-      if (e2) throw new Error(`horario_de_trips_en_ventana_json: ${e2.message}`);
-      for (const h of filasHorario ?? []) {
-          // `horario` solo tiene paradas seguidas, pero por si queda alguna fila
-          // vieja de una parada ya apagada, nos ceñimos a las que nos importan.
-          if (!enVivo.has(h.stop_id) && !historico.has(h.stop_id)) continue;
-          if (!indicePorTrip.has(h.trip_id)) indicePorTrip.set(h.trip_id, []);
-          indicePorTrip.get(h.trip_id).push({
-            stop_id: h.stop_id, seq: h.seq, prog: h.prog_segs, route: h.route_id,
-          });
-        }
-      }
-
-    // 6. Cruce: por cada trip vivo, sus paradas seguidas.
-    const observaciones = [];
-    const porParada = new Map();
-    for (const id of enVivo) porParada.set(id, []);
-
-    for (const [tripId, paradasDelTrip] of indicePorTrip) {
-      const tu = tuPorTrip.get(tripId);
-      if (!tu) continue;
-      const tripRel = tu.trip.schedule_relationship ?? "SCHEDULED";
-      const startDate = tu.trip.start_date;
-      if (!startDate) continue;
-
-      // Los updates del trip se ordenan UNA vez y se consultan para todas sus
-      // paradas. Hacerlo dentro del bucle reordenaba los mismos ~40 updates
-      // 36.076 veces por pasada, y es lo que mataba la function con
-      // `CPU Time exceeded` al ensanchar a 1.968 paradas en vivo.
-      const ups = prepararUpdates(tu.stop_time_update);
-
-      for (const est of paradasDelTrip) {
-        const stopId = est.stop_id;
-        const s = estadoParadaPreparado(ups, est.seq);
-
-        // Histórico: solo las paradas recolectadas. Estrecho a propósito, es lo
-        // que crece y lo único que llena el plan gratuito.
-        if (historico.has(stopId)) {
-          observaciones.push({
-            stop_id: stopId,
-            trip_id: tripId,
-            fecha_servicio: fechaISO(startDate),
-            seq: est.seq,
-            prog_segs: est.prog,
-            route_id: tu.trip.route_id ?? est.route ?? null,
-            delay: s.delay,
-            rel: s.rel,
-            trip_rel: tripRel,
-            origen: s.origen,
-            hora_abs: s.horaAbs,
-          });
-        }
-
-        // Caché para la web: todas las paradas en vivo.
-        if (!enVivo.has(stopId)) continue;
-        const programado = momentoProgramado(startDate, est.prog);
-        const estimado = s.horaAbs !== null && s.horaAbs !== undefined
-          ? new Date(s.horaAbs * 1000)
-          : new Date(programado.getTime() + (s.delay ?? 0) * 1000);
-        const minutos = Math.round((estimado.getTime() - ahora.getTime()) / 60000);
-        if (minutos < VENTANA_MIN[0] || minutos > VENTANA_MIN[1]) continue;
-        // Delays de horas son trips viejos sin purgar, no autobuses.
-        if (s.delay !== null && Math.abs(s.delay) > LIMITE_DELAY_SEGUNDOS) continue;
-
-        const routeId = tu.trip.route_id ?? est.route ?? null;
-        porParada.get(stopId).push({
-          linea: (routeId && nombreRuta.get(routeId)) || routeId,
-          minutos,
-          programado: programado.toISOString(),
-          estimado: estimado.toISOString(),
-          retrasoSegundos: s.delay,
-          estado: s.rel === "SKIPPED"
-            ? "SALTADA"
-            : tripRel === "CANCELED"
-            ? "CANCELADO"
-            : s.rel === "NO_DATA"
-            ? "SIN_DATOS"
-            : s.delay === null && s.horaAbs === null
-            ? "SOLO_HORARIO"
-            : "EN_VIVO",
-          tripId,
-          vehiculo: tu.vehicle?.id ?? null,
-        });
-      }
-    }
-
-    // 7. Histórico, en un solo viaje y transaccional
-    let tramos = 0;
-    if (observaciones.length) {
-      const { data, error } = await supabase.rpc("ingerir", {
-        obs: observaciones,
-        momento,
+      if (!tripId || !/^\d{8}$/.test(tu.trip.start_date ?? "")) continue;
+      const rel = tu.trip.schedule_relationship ?? "SCHEDULED";
+      if (rel === "DELETED") continue;
+      filasPorTrip.set(tripId, {
+        trip_id: tripId,
+        start_date: tu.trip.start_date,
+        rel,
+        route_id: tu.trip.route_id ?? null,
+        vehiculo: tu.vehicle?.id ?? null,
+        updates: updatesCompactos(tu.stop_time_update),
+        feed_ts: feedTs,
+        visto: ahora.toISOString(),
       });
-      if (error) throw new Error(`ingerir: ${error.message}`);
-      tramos = data ?? 0;
     }
 
-    // 8. Caché de llegadas: una fila por parada en vivo (vacía si no hay bus).
-    const filas = [...porParada.entries()].map(([stop_id, llegadas]) => ({
-      stop_id,
-      generado: ahora.toISOString(),
-      feed_ts: feedTs,
-      llegadas: llegadas.sort((a, b) => a.minutos - b.minutos).slice(0, 15),
-    }));
+    // 3. Se guarda y ya está. Escribir no gasta egress y leer sí: esta función
+    //    no lee NADA de la base de datos. Las llegadas las calcula la web, de
+    //    una parada y cuando alguien la mira.
+    const filas = [...filasPorTrip.values()];
     for (let i = 0; i < filas.length; i += LOTE_CACHE) {
-      const { error: e3 } = await supabase
-        .from("llegada_actual")
-        .upsert(filas.slice(i, i + LOTE_CACHE), { onConflict: "stop_id" });
-      if (e3) throw new Error(`llegada_actual: ${e3.message}`);
+      const { error } = await supabase
+        .from("trip_vivo")
+        .upsert(filas.slice(i, i + LOTE_CACHE), { onConflict: "trip_id" });
+      if (error) throw new Error(`trip_vivo: ${error.message}`);
+    }
+    {
+      const corte = new Date(ahora.getTime() - 10 * 60_000).toISOString();
+      const { error } = await supabase.from("trip_vivo").delete().lt("visto", corte);
+      if (error) throw new Error(`trip_vivo (limpieza): ${error.message}`);
     }
 
-    // 9. Posiciones GPS, para el mapa. Va al final y en su propio try: si la
+    // 4. Posiciones GPS, para el mapa. Va al final y en su propio try: si la
     //    NTA responde 429 a la segunda llamada, ya está guardado lo que
-    //    importa —el histórico y las llegadas— y esta pasada no se pierde. El
-    //    mapa simplemente enseña las posiciones de hace un minuto.
+    //    importa —el feed— y esta pasada no se pierde. El mapa simplemente
+    //    enseña las posiciones de hace un minuto.
     let vehiculos = 0;
     let errorVehiculos = null;
     try {
@@ -370,12 +212,7 @@ Deno.serve(async (_req) => {
       error_vehiculos: errorVehiculos,
       feed_ts: feedTs,
       entidades: feed.entity?.length ?? 0,
-      trips_vivos: vivos.length,
-      paradas_en_vivo: enVivo.size,
-      paradas_historico: historico.size,
-      observaciones: observaciones.length,
-      tramos_tocados: tramos,
-      con_llegadas: filas.filter((f) => f.llegadas.length).length,
+      trips_vivos: filas.length,
     });
   } catch (err) {
     console.error(detallar(err));
