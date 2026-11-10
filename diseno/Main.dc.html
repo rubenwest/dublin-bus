@@ -1,0 +1,140 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    :root{
+      --bg:#0e1014; --panel:#171a21; --panel2:#1f232c; --hard:#05060a; --line:#2b303b;
+      --text:#e8eaed; --dim:#98a0ac;
+      --bus:#f2b705; --luas:#c026d3; --vivo:#35c6a5; --malo:#ff6b6b;
+      --rbg:#13241b; --rgrid:#22452f; --rsweep:#46a074; --rphos:#8fcfa6; --rdim:#3f6a4e;
+    }
+    .light{
+      --bg:#f4f5f7; --panel:#ffffff; --panel2:#eceef2; --hard:#b9bec7; --line:#d9dce2;
+      --text:#16181d; --dim:#5f6672;
+      --bus:#f2b705; --luas:#b4179f; --vivo:#0e9e80; --malo:#c62828;
+    }
+    *{box-sizing:border-box;}
+    body{margin:0;}
+    .scr{ width:390px; min-height:880px; background:var(--bg); color:var(--text);
+      font-family:"IBM Plex Mono",ui-monospace,monospace; padding:18px; }
+    .wordmark{ font-family:"Press Start 2P",monospace; font-size:11px; letter-spacing:1px; }
+    .lbl{ font-family:"Press Start 2P",monospace; font-size:8px; letter-spacing:1px; color:var(--dim); text-transform:uppercase; }
+    .radarwrap{ display:flex; justify-content:center; margin:14px 0 4px; }
+    .row{ display:flex; align-items:center; gap:12px; padding:11px 12px; margin-top:10px;
+      background:var(--panel); border:3px solid var(--hard); box-shadow:4px 4px 0 var(--hard); }
+    .num{ width:26px;height:26px; flex:none; display:grid; place-items:center;
+      font-family:"Press Start 2P",monospace; font-size:10px; color:#241a00; background:var(--bus); }
+    .row.luas .num{ background:var(--luas); color:#2a0026; }
+    .nm{ flex:1; min-width:0; font-size:14px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .tag{ font-family:"Press Start 2P",monospace; font-size:7px; padding:4px 5px; color:#241a00; background:var(--bus); }
+    .row.luas .tag{ background:var(--luas); color:#2a0026; }
+    .dist{ font-family:"Press Start 2P",monospace; font-size:10px; color:var(--vivo); white-space:nowrap; }
+    a{color:var(--vivo);} a:hover{color:var(--bus);}
+  </style>
+</helmet>
+
+<div class="scr {{themeClass}}">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <div class="wordmark" style="color:var(--text)">CERCA DE TI</div>
+    <div class="lbl">Rathmines</div>
+  </div>
+
+  <div class="radarwrap">
+    <svg width="340" height="340" viewBox="0 0 300 300" shape-rendering="geometricPrecision" style="display:block">
+      <defs>
+        <radialGradient id="swg" gradientUnits="userSpaceOnUse" cx="150" cy="150" r="125">
+          <stop offset="0" stop-color="#46a074" stop-opacity="0"/>
+          <stop offset="1" stop-color="#46a074" stop-opacity="0.38"/>
+        </radialGradient>
+        <radialGradient id="vig" gradientUnits="userSpaceOnUse" cx="150" cy="140" r="130">
+          <stop offset="0.6" stop-color="#000" stop-opacity="0"/>
+          <stop offset="1" stop-color="#000" stop-opacity="0.5"/>
+        </radialGradient>
+      </defs>
+      <!-- bezel -->
+      <circle cx="150" cy="150" r="140" fill="var(--panel)" stroke="var(--hard)" stroke-width="4"/>
+      <circle cx="150" cy="150" r="132" fill="none" stroke="var(--hard)" stroke-width="2" opacity="0.6"/>
+      <!-- screen -->
+      <circle cx="150" cy="150" r="126" fill="#13241b"/>
+      <!-- rings -->
+      <circle cx="150" cy="150" r="118" fill="none" stroke="#22452f" stroke-width="1.5" stroke-dasharray="2 4"/>
+      <circle cx="150" cy="150" r="78.7" fill="none" stroke="#22452f" stroke-width="1.5" stroke-dasharray="2 4"/>
+      <circle cx="150" cy="150" r="39.3" fill="none" stroke="#22452f" stroke-width="1.5" stroke-dasharray="2 4"/>
+      <!-- radial spokes -->
+      <g stroke="#1d3a28" stroke-width="1.2">
+        <line x1="150" y1="32" x2="150" y2="268"/>
+        <line x1="32" y1="150" x2="268" y2="150"/>
+        <line x1="66" y1="66" x2="234" y2="234"/>
+        <line x1="234" y1="66" x2="66" y2="234"/>
+      </g>
+      <!-- sweep (rotates) -->
+      <g>
+        <path d="M150,150 L180.5,36 A118,118 0 0 1 246.7,82.3 Z" fill="url(#swg)"/>
+        <line x1="150" y1="150" x2="246.7" y2="82.3" stroke="#8fcfa6" stroke-width="1.5" opacity="0.55"/>
+        <animateTransform attributeName="transform" type="rotate" from="0 150 150" to="360 150 150" dur="6s" repeatCount="indefinite"/>
+      </g>
+      <!-- stops (blips) -->
+      <g shape-rendering="crispEdges">
+        <rect x="150" y="138" width="10" height="10" fill="#f2b705"/><rect x="153" y="141" width="4" height="4" fill="#fff2cc"/>
+        <rect x="136" y="167" width="8" height="8" fill="#f2b705"/>
+        <rect x="115" y="128" width="8" height="8" fill="#f2b705"/>
+        <rect x="182" y="167" width="8" height="8" fill="#f2b705"/>
+        <rect x="204" y="136" width="8" height="8" fill="#f2b705"/>
+        <rect x="160" y="81" width="8" height="8" fill="#c026d3"/>
+        <rect x="126" y="72" width="8" height="8" fill="#f2b705"/>
+        <rect x="161" y="229" width="8" height="8" fill="#f2b705"/>
+        <rect x="74" y="207" width="8" height="8" fill="#f2b705"/>
+        <rect x="241" y="91" width="8" height="8" fill="#c026d3"/>
+      </g>
+      <!-- labels for nearest 4 -->
+      <g fill="#cfe8d6" font-family="'Press Start 2P',monospace" font-size="8">
+        <text x="163" y="140">1</text>
+        <text x="126" y="176">2</text>
+        <text x="104" y="132">3</text>
+        <text x="192" y="176">4</text>
+      </g>
+      <!-- YOU -->
+      <g>
+        <circle cx="150" cy="150" r="6" fill="none" stroke="#8fcfa6" stroke-width="1.5" opacity="0.7">
+          <animate attributeName="r" values="5;16;5" dur="2.4s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.7;0;0.7" dur="2.4s" repeatCount="indefinite"/>
+        </circle>
+        <rect x="147" y="147" width="6" height="6" fill="#eafff0" shape-rendering="crispEdges"/>
+        <rect x="141" y="149" width="4" height="2" fill="#8fcfa6"/><rect x="155" y="149" width="4" height="2" fill="#8fcfa6"/>
+        <rect x="149" y="141" width="2" height="4" fill="#8fcfa6"/><rect x="149" y="155" width="2" height="4" fill="#8fcfa6"/>
+      </g>
+      <text x="150" y="24" text-anchor="middle" fill="#8fcfa6" font-family="'Press Start 2P',monospace" font-size="8">N</text>
+      <circle cx="150" cy="150" r="126" fill="url(#vig)"/>
+    </svg>
+  </div>
+
+  <div class="lbl" style="margin:10px 2px 2px">Paradas cerca · 600 m</div>
+
+  <div class="row">
+    <span class="num">1</span><span class="nm">Rathmines Close</span><span class="tag">BUS</span><span class="dist">45 m</span>
+  </div>
+  <div class="row">
+    <span class="num">2</span><span class="nm">Rathmines Rd Lwr</span><span class="tag">BUS</span><span class="dist">120 m</span>
+  </div>
+  <div class="row">
+    <span class="num">3</span><span class="nm">Richmond Hill</span><span class="tag">BUS</span><span class="dist">180 m</span>
+  </div>
+  <div class="row luas">
+    <span class="num">6</span><span class="nm">Charlemont</span><span class="tag">LUAS</span><span class="dist">340 m</span>
+  </div>
+</div>
+
+<script data-dc-script data-props='{"tema":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Tema"}}'>
+class Component extends DCLogic {
+  renderVals(){ return { themeClass: (this.props.tema === 'light') ? 'light' : '' }; }
+}
+</script>
+</body>
+</html>

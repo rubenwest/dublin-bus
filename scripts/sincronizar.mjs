@@ -563,21 +563,29 @@ function aPatrones(porViaje, tripRuta) {
 
 /** Barre los viajes de la carga anterior y los patrones que quedan huérfanos. */
 async function limpiarHorario(desde) {
-  const res = await fetch(`${URL_BASE}/rest/v1/rpc/limpiar_horario`, {
-    method: "POST",
-    headers: {
-      apikey: SERVICE_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ p_desde: desde }),
-    signal: AbortSignal.timeout(120_000),
-  });
-  if (!res.ok) {
-    throw new Error(`limpiar_horario: HTTP ${res.status} — ${(await res.text()).slice(0, 300)}`);
+  // Por lotes: de una vez pasa del statement_timeout de 8 s con la carga
+  // completa (pasó el 2026-11-09). Se repite hasta que no quede nada que borrar.
+  let viajes = 0, patrones = 0;
+  for (let vuelta = 0; vuelta < 200; vuelta++) {
+    const res = await fetch(`${URL_BASE}/rest/v1/rpc/limpiar_horario_lote`, {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_desde: desde, p_max: 5000 }),
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (!res.ok) {
+      throw new Error(`limpiar_horario_lote: HTTP ${res.status} — ${(await res.text()).slice(0, 300)}`);
+    }
+    const r = await res.json();
+    viajes += r.viajes_borrados;
+    patrones += r.patrones_borrados;
+    if (r.viajes_borrados === 0 && r.patrones_borrados === 0) break;
   }
-  const r = await res.json();
-  return `${r.viajes_borrados} viajes, ${r.patrones_borrados} patrones`;
+  return `${viajes} viajes, ${patrones} patrones`;
 }
 
 /**
