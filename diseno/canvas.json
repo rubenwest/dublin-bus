@@ -1,0 +1,13 @@
+{
+  "artboards": [
+    { "file": "DesignSystem.dc.html", "title": "Sistema", "x": 0, "y": 0, "w": 390, "h": 900 },
+    { "file": "Main.dc.html", "title": "Cerca de ti", "x": 510, "y": 0, "w": 390, "h": 940 },
+    { "file": "Llegadas.dc.html", "title": "Llegadas", "x": 1020, "y": 0, "w": 390, "h": 1040 },
+    { "file": "Buscador.dc.html", "title": "Buscador", "x": 1530, "y": 0, "w": 390, "h": 960 }
+  ],
+  "annotations": [
+    { "id": "nota-radar", "x": 510, "y": -96, "w": 390, "text": "Radar centrado en ti: verde desaturado SOLO dentro de la pantalla; el resto de la app va sobre tinta oscura." },
+    { "id": "nota-hist", "x": 1020, "y": -96, "w": 390, "text": "La franja ámbar es el diferencial del proyecto: lo que ninguna otra app dice." }
+  ],
+  "launch": { "view": "canvas" }
+}

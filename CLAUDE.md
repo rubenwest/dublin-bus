@@ -878,6 +878,41 @@ y manda un correo por Resend (mismo patrón que `avisar_feedback`) si:
 Un correo por motivo cada 12 h; el estado (`alerta_estado`) se borra al
 recuperarse. `select vigilar_llegadas(1.01)` fuerza el aviso para probarlo.
 
+## El estático se actualiza solo (2026-11-10)
+
+Tercer episodio del mismo fallo (20-09, 30-09, 09-11): la NTA cambia los
+`trip_id` y el horario cargado deja de casar. El 09-11 se recargó a mano, y al
+día siguiente el correo volvió a saltar (21 %): **el feed iba por delante del
+ZIP publicado**, con prefijos (6055, 6037, 5966) que no estaban en ningún
+estático. Recargar no lo arreglaba; había que esperar al siguiente ZIP.
+
+`scripts/actualizar-estatico.mjs` (lanzado con `actualizar-estatico.cmd`) lo
+hace sin manos, y la tarea de Windows `dublin-bus-actualizar-estatico` lo
+ejecuta a las 08:15 y 09:30 hora del PC (07:15 y 08:30 en Dublín): el PC solo
+se usa entre las 8 y las 10, así que a otras horas estaría apagado. Mira
+`Last-Modified` del ZIP; si es nuevo lo baja a `datos/estatico-nuevo/`, **mide
+cuántos viajes vivos casan y no carga por debajo del 90 %**, y si casa
+reindexa, sube con `--nucleo` y regenera `trazados-linea.json` y
+`codigos-parada.json`. Esos dos JSON **no se commitean ni se despliegan solos**
+(sigue siendo una PR). Log en `datos/actualizar-estatico.log`, estado en
+`datos/estatico-estado.json`. `--seco` comprueba sin cargar, `--forzar` ignora
+`Last-Modified`.
+
+Limitaciones: solo corre con el PC encendido (`StartWhenAvailable` lo lanza al
+volver a arrancar). Y si el feed va por delante del ZIP, no hay nada que
+hacer más que esperar: el correo de `vigilar_llegadas` seguirá saltando.
+
+Por el camino: **`limpiar_horario` se quedó corta.** Con las dos cargas
+conviviendo (~170k viajes) el barrido pasaba del `statement_timeout` de 8 s y
+la carga terminaba con la base mezclada. `sincronizar.mjs` usa ahora
+`limpiar_horario_lote(p_desde, p_max)`, que borra de 5.000 en 5.000 hasta que
+no queda nada.
+
+También: **`llegada_actual` ya no se escribe** (última pasada 2026-10-23). La
+Edge Function v23 solo escribe `trip_vivo` y `vehiculo`, y la web calcula las
+llegadas por parada con `llegadas_de_parada`. Para saber si el cron funciona
+se mira `trip_vivo.visto` o `net._http_response`.
+
 ## El condado entero (2026-10-04)
 
 Feedback: **"No aparece la parada 5029 del 41C"**. El código público 5029 es
@@ -1193,6 +1228,62 @@ Y el conector MCP corta a los 120 s (`statement_timeout` de su sesión, que un
 `set` dentro de una función no amplía) y pg_cron no admite programar un
 trabajo de una sola vez desde aquí. El archivado inicial se hizo un día por
 llamada.
+
+## Bloqueado por egress (2026-10-24)
+
+**El techo que nos cerró no fue el tamaño de la base, fue el ancho de
+banda.** Desde el 2026-10-24 a las ~05:00 UTC Supabase responde **402**
+(`exceed_egress_quota`) a todo el proyecto: la web, la Edge Function y el
+cron. Los correos de `noreply@supabase.com`:
+
+| Fecha | Egress | Qué dice |
+|---|---|---|
+| 11-10 | — | cuota superada, periodo de gracia hasta el 11-11 |
+| 20-10 | 11,59 GB de 5,5 | gracia recortada al 23-10 |
+| 23-10 | 13,91 GB de 5,5 | restringido hasta que se rellene la cuota, **el 1-11** |
+
+Solo hay dos salidas: pasar a Pro (25 $/mes, 250 GB) o esperar al 1 de
+noviembre. Borrar datos no sirve de nada: la base está en 184 MB. Y ojo,
+**la segunda vez no hay periodo de gracia**: tras el 1-11, si se vuelve a
+pasar de 5,5 GB en el mes, el bloqueo es inmediato.
+
+**El egress lo genera nuestro propio cron, no la web.** En los logs del
+gateway del 22-10 todas las peticiones llevan el user-agent de Deno, o sea
+que son de la Edge Function. El egress de la base cuenta los datos que
+PostgREST devuelve, también a una Edge Function del mismo proyecto. Medido
+el 23-10 a las 22:41 UTC, con 465 trips vivos (de noche, pocos):
+
+| Lectura por pasada (1/min) | Bytes en crudo |
+|---|---|
+| `horario_de_trips_en_ventana_json` | **2.054.943** (~40 filas por trip) |
+| `parada` (las 5.431 en vivo, paginada) | 352.579 |
+| `ruta` | 16.033 |
+
+En hora punta hay ~3.100 trips vivos, así que el horario son del orden de
+**10-14 MB por pasada**. Que el total salga en "solo" ~0,6 GB/día indica que
+se cuenta comprimido (gzip). El salto vino con el condado entero (04-10) y
+las líneas enteras (07-10): más paradas en vivo son más pares (trip, parada)
+en cada respuesta. **"Llegadas en vivo, anchas" no cuesta llamadas a la NTA,
+pero sí egress**, y eso este documento no lo había medido.
+
+Para que no vuelva a pasar en noviembre, el egress diario tiene que bajar
+de ~0,6 GB a menos de ~0,15 GB (5,5 GB / 31 días, con margen). Opciones,
+de menos a más trabajo:
+
+- **Cron cada 2-3 minutos** en vez de cada minuto: divide el egress entre 2-3.
+  Cambia lo que ve el usuario (llegadas de hasta 2-3 min de antigüedad).
+- **Menos paradas `en_vivo`**: el coste es proporcional a los pares
+  (trip, parada).
+- **Recortar la ventana del horario**: hoy va de −47 a +135 min (90 de
+  llegadas más 45 de margen por cada lado); el margen superior de 45 min
+  solo cubre buses que van 45 min adelantados. Bajarlo a 10 min quita ~20 %.
+- **Respuesta compacta** (arrays en vez de objetos con claves, sin
+  `route_id` repetido): mucho menos en crudo, pero tras el gzip gana poco.
+- **No mandar el horario a la función**: que la función mande a Postgres los
+  updates del feed (eso es ingress, gratis) y el cruce se haga en SQL. Es lo
+  único que lo arregla de raíz, pero duplica en SQL parte de `estadoParada`,
+  que este proyecto insiste en tener en una sola copia.
+- Pasar a Pro.
 
 ## Supabase
 

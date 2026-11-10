@@ -1,0 +1,109 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    :root{
+      --bg:#0e1014; --panel:#171a21; --panel2:#1f232c; --hard:#05060a; --line:#2b303b;
+      --text:#e8eaed; --dim:#98a0ac;
+      --bus:#f2b705; --luas:#c026d3; --vivo:#35c6a5;
+    }
+    .light{
+      --bg:#f4f5f7; --panel:#ffffff; --panel2:#eceef2; --hard:#b9bec7; --line:#d9dce2;
+      --text:#16181d; --dim:#5f6672;
+      --bus:#f2b705; --luas:#b4179f; --vivo:#0e9e80;
+    }
+    *{box-sizing:border-box;}
+    body{margin:0;}
+    .scr{ width:390px; min-height:900px; background:var(--bg); color:var(--text);
+      font-family:"IBM Plex Mono",ui-monospace,monospace; padding:18px; }
+    .wordmark{ font-family:"Press Start 2P",monospace; font-size:11px; letter-spacing:1px; }
+    .lbl{ font-family:"Press Start 2P",monospace; font-size:8px; letter-spacing:1px; color:var(--dim); text-transform:uppercase; }
+    .search{ display:flex; align-items:center; gap:10px; margin-top:14px;
+      background:var(--panel); border:3px solid var(--hard); box-shadow:4px 4px 0 var(--hard); padding:13px 12px; }
+    .search input{ flex:1; border:none; background:transparent; color:var(--text); font-family:"IBM Plex Mono",monospace; font-size:15px; outline:none; }
+    .search input::placeholder{ color:var(--dim); }
+    .sprite{ width:30px;height:23px; flex:none; display:inline-block; background-repeat:no-repeat;background-position:center;background-size:contain;image-rendering:pixelated;
+      background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2016%2012'%20shape-rendering%3D'crispEdges'%3E%3Crect%20x%3D'1'%20y%3D'2'%20width%3D'14'%20height%3D'7'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'1'%20y%3D'2'%20width%3D'14'%20height%3D'1'%20fill%3D'%23ffd23f'%2F%3E%3Crect%20x%3D'2'%20y%3D'4'%20width%3D'12'%20height%3D'2'%20fill%3D'%23bfe9ff'%2F%3E%3Crect%20x%3D'4'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'7'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'10'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'1'%20y%3D'7'%20width%3D'14'%20height%3D'1'%20fill%3D'%23c98a00'%2F%3E%3Crect%20x%3D'2'%20y%3D'9'%20width%3D'2'%20height%3D'2'%20fill%3D'%232f2f37'%2F%3E%3Crect%20x%3D'11'%20y%3D'9'%20width%3D'2'%20height%3D'2'%20fill%3D'%232f2f37'%2F%3E%3C%2Fsvg%3E");}
+    .sprite.tram{ background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2016%2012'%20shape-rendering%3D'crispEdges'%3E%3Crect%20x%3D'8'%20y%3D'0'%20width%3D'1'%20height%3D'2'%20fill%3D'%239aa3af'%2F%3E%3Crect%20x%3D'5'%20y%3D'0'%20width%3D'6'%20height%3D'1'%20fill%3D'%239aa3af'%2F%3E%3Crect%20x%3D'2'%20y%3D'2'%20width%3D'12'%20height%3D'7'%20fill%3D'%23c026d3'%2F%3E%3Crect%20x%3D'2'%20y%3D'2'%20width%3D'12'%20height%3D'1'%20fill%3D'%23e879f9'%2F%3E%3Crect%20x%3D'3'%20y%3D'4'%20width%3D'10'%20height%3D'2'%20fill%3D'%23bfe9ff'%2F%3E%3Crect%20x%3D'7'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23c026d3'%2F%3E%3Crect%20x%3D'2'%20y%3D'8'%20width%3D'12'%20height%3D'1'%20fill%3D'%2386198f'%2F%3E%3Crect%20x%3D'1'%20y%3D'9'%20width%3D'14'%20height%3D'1'%20fill%3D'%239aa3af'%2F%3E%3Crect%20x%3D'4'%20y%3D'10'%20width%3D'1'%20height%3D'1'%20fill%3D'%232f2f37'%2F%3E%3Crect%20x%3D'11'%20y%3D'10'%20width%3D'1'%20height%3D'1'%20fill%3D'%232f2f37'%2F%3E%3C%2Fsvg%3E");}
+    .row{ display:flex; align-items:center; gap:11px; padding:11px 12px; margin-top:10px;
+      background:var(--panel); border:3px solid var(--hard); box-shadow:4px 4px 0 var(--hard); }
+    .info{ flex:1; min-width:0; }
+    .nm{ font-size:14px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .lch{ display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+    .lch span{ font-size:11px; font-weight:600; padding:1px 6px; border:2px solid var(--line); background:var(--panel2); }
+    .star{ flex:none; width:30px; text-align:center; font-size:20px; color:var(--dim); cursor:pointer; }
+    .star.on{ color:var(--bus); }
+    a{color:var(--vivo);} a:hover{color:var(--bus);}
+  </style>
+</helmet>
+
+<div class="scr {{themeClass}}">
+  <div class="wordmark" style="color:var(--text)">BUSCAR</div>
+
+  <div class="search">
+    <svg width="20" height="20" viewBox="0 0 20 20" shape-rendering="crispEdges" style="flex:none">
+      <rect x="3" y="3" width="9" height="9" fill="none" stroke="var(--dim)" stroke-width="2"/>
+      <rect x="12" y="12" width="2" height="2" fill="var(--dim)"/><rect x="14" y="14" width="3" height="3" fill="var(--dim)"/>
+    </svg>
+    <input type="text" placeholder="Parada o línea…" value="o'connell">
+  </div>
+
+  <div class="lbl" style="margin:22px 2px 2px">Favoritas</div>
+  <div class="row">
+    <span class="sprite"></span>
+    <div class="info"><div class="nm">Rathmines Close</div>
+      <div class="lch"><span>14</span><span>15</span><span>65</span><span>83</span></div></div>
+    <div class="star on">★</div>
+  </div>
+  <div class="row">
+    <span class="sprite tram"></span>
+    <div class="info"><div class="nm">Charlemont</div>
+      <div class="lch"><span style="border-color:var(--luas); color:var(--luas)">Green</span></div></div>
+    <div class="star on">★</div>
+  </div>
+
+  <div class="lbl" style="margin:22px 2px 2px">Resultados · 7</div>
+  <div class="row">
+    <span class="sprite"></span>
+    <div class="info"><div class="nm">O'Connell St Upr</div>
+      <div class="lch"><span>1</span><span>11</span><span>13</span><span>16</span><span>40</span><span>44</span></div></div>
+    <div class="star">☆</div>
+  </div>
+  <div class="row">
+    <span class="sprite"></span>
+    <div class="info"><div class="nm">O'Connell St Lwr</div>
+      <div class="lch"><span>4</span><span>7</span><span>9</span><span>140</span><span>145</span></div></div>
+    <div class="star">☆</div>
+  </div>
+  <div class="row">
+    <span class="sprite tram"></span>
+    <div class="info"><div class="nm">O'Connell — GPO</div>
+      <div class="lch"><span style="border-color:var(--luas); color:var(--luas)">Red</span><span style="border-color:var(--luas); color:var(--luas)">Green</span></div></div>
+    <div class="star">☆</div>
+  </div>
+  <div class="row">
+    <span class="sprite"></span>
+    <div class="info"><div class="nm">O'Connell Bridge</div>
+      <div class="lch"><span>15</span><span>27</span><span>46A</span><span>145</span></div></div>
+    <div class="star">☆</div>
+  </div>
+
+  <div style="margin-top:16px; font-size:12px; color:var(--dim); line-height:1.5">
+    Los chips de línea son lo que distingue una <b style="color:var(--text)">O'Connell St</b> de otra.
+  </div>
+</div>
+
+<script data-dc-script data-props='{"tema":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Tema"}}'>
+class Component extends DCLogic {
+  renderVals(){ return { themeClass: (this.props.tema === 'light') ? 'light' : '' }; }
+}
+</script>
+</body>
+</html>

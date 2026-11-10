@@ -1,0 +1,119 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    :root{
+      --bg:#0e1014; --panel:#171a21; --panel2:#1f232c; --hard:#05060a; --line:#2b303b;
+      --text:#e8eaed; --dim:#98a0ac;
+      --bus:#f2b705; --luas:#c026d3; --vivo:#35c6a5; --malo:#ff6b6b; --malo-bg:#2a1618;
+    }
+    .light{
+      --bg:#f4f5f7; --panel:#ffffff; --panel2:#eceef2; --hard:#b9bec7; --line:#d9dce2;
+      --text:#16181d; --dim:#5f6672;
+      --bus:#f2b705; --luas:#b4179f; --vivo:#0e9e80; --malo:#c62828; --malo-bg:#fdeaea;
+    }
+    *{box-sizing:border-box;}
+    body{margin:0;}
+    .scr{ width:390px; min-height:980px; background:var(--bg); color:var(--text);
+      font-family:"IBM Plex Mono",ui-monospace,monospace; padding:18px; }
+    .px{ font-family:"Press Start 2P",monospace; }
+    .lbl{ font-family:"Press Start 2P",monospace; font-size:8px; letter-spacing:1px; color:var(--dim); text-transform:uppercase; }
+    .sprite{ width:34px;height:26px; flex:none; display:inline-block; background-repeat:no-repeat;background-position:center;background-size:contain;image-rendering:pixelated;
+      background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%2016%2012'%20shape-rendering%3D'crispEdges'%3E%3Crect%20x%3D'1'%20y%3D'2'%20width%3D'14'%20height%3D'7'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'1'%20y%3D'2'%20width%3D'14'%20height%3D'1'%20fill%3D'%23ffd23f'%2F%3E%3Crect%20x%3D'2'%20y%3D'4'%20width%3D'12'%20height%3D'2'%20fill%3D'%23bfe9ff'%2F%3E%3Crect%20x%3D'4'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'7'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'10'%20y%3D'4'%20width%3D'1'%20height%3D'2'%20fill%3D'%23f2b705'%2F%3E%3Crect%20x%3D'1'%20y%3D'7'%20width%3D'14'%20height%3D'1'%20fill%3D'%23c98a00'%2F%3E%3Crect%20x%3D'2'%20y%3D'9'%20width%3D'2'%20height%3D'2'%20fill%3D'%232f2f37'%2F%3E%3Crect%20x%3D'11'%20y%3D'9'%20width%3D'2'%20height%3D'2'%20fill%3D'%232f2f37'%2F%3E%3C%2Fsvg%3E");}
+    .chip{ font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600; padding:3px 8px; border:2px solid var(--line); background:var(--panel2); color:var(--text); }
+    .arr{ display:grid; grid-template-columns:3.4rem 1fr auto; align-items:center; gap:12px;
+      padding:12px; margin-top:10px; background:var(--panel); border:3px solid var(--hard); box-shadow:4px 4px 0 var(--hard); }
+    .linea{ font-family:"Press Start 2P",monospace; font-size:11px; text-align:center; padding:9px 4px; background:var(--panel2); border:2px solid var(--hard); }
+    .mid{ min-width:0; }
+    .hora{ font-family:"Press Start 2P",monospace; font-size:10px; }
+    .nota{ font-size:12px; color:var(--dim); margin-top:5px; }
+    .min{ font-family:"Press Start 2P",monospace; font-size:15px; color:var(--vivo); white-space:nowrap; text-align:right; }
+    .min small{ display:block; font-size:7px; color:var(--dim); margin-top:4px; }
+    a{color:var(--vivo);} a:hover{color:var(--bus);}
+  </style>
+</helmet>
+
+<div class="scr {{themeClass}}">
+  <!-- cabecera -->
+  <div style="display:flex; align-items:center; gap:12px;">
+    <div class="px" style="font-size:14px; color:var(--vivo); cursor:pointer">&lt;</div>
+    <span class="sprite"></span>
+    <div style="min-width:0">
+      <div style="font-size:17px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">Rathmines Close</div>
+      <div style="font-size:11px; color:var(--dim)">8220DB000270</div>
+    </div>
+  </div>
+  <div style="display:flex; gap:7px; margin:12px 0 4px; flex-wrap:wrap">
+    <span class="chip">14</span><span class="chip">15</span><span class="chip">65</span><span class="chip">83</span><span class="chip">140</span>
+  </div>
+
+  <!-- marcador arcade: próxima llegada -->
+  <div style="margin-top:14px; background:#0a1512; border:3px solid var(--hard); box-shadow:4px 4px 0 var(--hard); padding:18px; text-align:center;">
+    <div class="lbl" style="color:var(--vivo); opacity:.8">Próximo · 39A</div>
+    <div class="px" style="font-size:52px; color:var(--vivo); margin:12px 0 2px; text-shadow:0 0 12px rgba(53,198,165,.35)">4</div>
+    <div class="px" style="font-size:10px; color:var(--vivo)">MIN</div>
+  </div>
+
+  <!-- LA LÍNEA DIFERENCIAL -->
+  <div style="margin-top:12px; background:var(--panel); border:3px solid var(--bus); box-shadow:4px 4px 0 var(--hard); padding:12px; display:flex; gap:11px; align-items:flex-start;">
+    <svg width="24" height="24" viewBox="0 0 24 24" shape-rendering="crispEdges" style="flex:none; margin-top:2px">
+      <rect x="11" y="2" width="2" height="2" fill="#f2b705"/><rect x="9" y="4" width="6" height="2" fill="#f2b705"/>
+      <rect x="7" y="6" width="10" height="2" fill="#f2b705"/><rect x="5" y="8" width="14" height="2" fill="#f2b705"/>
+      <rect x="3" y="10" width="18" height="2" fill="#f2b705"/><rect x="1" y="12" width="22" height="6" fill="#f2b705"/>
+      <rect x="11" y="7" width="2" height="6" fill="#241a00"/><rect x="11" y="14" width="2" height="2" fill="#241a00"/>
+    </svg>
+    <div>
+      <div class="lbl" style="color:var(--bus); margin-bottom:6px">Histórico · lo que otras apps no dicen</div>
+      <div style="font-size:13px; line-height:1.5">Este 39A <b style="color:var(--bus)">suele llegar +4 min tarde</b> a esta hora. Sesgo medio 19–20 h · n=48.</div>
+    </div>
+  </div>
+
+  <div class="lbl" style="margin:20px 2px 2px">Siguientes</div>
+
+  <!-- llegada normal -->
+  <div class="arr">
+    <div class="linea">83</div>
+    <div class="mid"><div class="hora">15:42</div><div class="nota">a tiempo</div></div>
+    <div class="min">11<small>MIN</small></div>
+  </div>
+
+  <!-- SKIPPED -->
+  <div class="arr" style="background:var(--malo-bg); border-color:var(--malo)">
+    <div class="linea" style="color:var(--malo); border-color:var(--malo)">15</div>
+    <div class="mid"><div class="hora" style="color:var(--malo)">15:48</div><div class="nota" style="color:var(--malo)">Desvío en la ruta</div></div>
+    <div class="min px" style="color:var(--malo); font-size:11px">NO<br>PARA</div>
+  </div>
+
+  <!-- normal -->
+  <div class="arr">
+    <div class="linea">140</div>
+    <div class="mid"><div class="hora">15:53</div><div class="nota">+2 min tarde</div></div>
+    <div class="min">22<small>MIN</small></div>
+  </div>
+
+  <!-- CANCELADO -->
+  <div class="arr" style="opacity:.7">
+    <div class="linea" style="text-decoration:line-through">65</div>
+    <div class="mid"><div class="hora" style="text-decoration:line-through">16:01</div><div class="nota" style="color:var(--malo); text-transform:uppercase; font-size:11px">Cancelado</div></div>
+    <div class="min" style="color:var(--dim); text-decoration:line-through">30<small>MIN</small></div>
+  </div>
+
+  <div style="margin-top:16px; font-size:11px; color:var(--dim); display:flex; align-items:center; gap:6px">
+    <span style="width:8px;height:8px;background:var(--vivo);display:inline-block"></span> Datos de hace 15 s
+  </div>
+</div>
+
+<script data-dc-script data-props='{"tema":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Tema"}}'>
+class Component extends DCLogic {
+  renderVals(){ return { themeClass: (this.props.tema === 'light') ? 'light' : '' }; }
+}
+</script>
+</body>
+</html>
