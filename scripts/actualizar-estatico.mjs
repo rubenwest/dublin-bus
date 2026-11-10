@@ -153,6 +153,7 @@ async function main() {
   try {
     paso("trazados", process.execPath, ["scripts/trazados.mjs"]);
     paso("codigos-parada", process.execPath, ["scripts/codigos-parada.mjs"]);
+    paso("paradas-web", process.execPath, ["scripts/paradas-web.mjs"]);
     log("web/public regenerado: falta commitearlo y desplegar.");
   } catch (e) {
     log(`AVISO (la base ya está cargada): ${e.message}`);

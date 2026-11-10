@@ -915,8 +915,8 @@ ejecuta a las 08:15 y 09:30 hora del PC (07:15 y 08:30 en Dublín): el PC solo
 se usa entre las 8 y las 10, así que a otras horas estaría apagado. Mira
 `Last-Modified` del ZIP; si es nuevo lo baja a `datos/estatico-nuevo/`, **mide
 cuántos viajes vivos casan y no carga por debajo del 90 %**, y si casa
-reindexa, sube con `--nucleo` y regenera `trazados-linea.json` y
-`codigos-parada.json`. Esos dos JSON **no se commitean ni se despliegan solos**
+reindexa, sube con `--nucleo` y regenera `trazados-linea.json`,
+`codigos-parada.json` y `paradas.json`. Esos JSON **no se commitean ni se despliegan solos**
 (sigue siendo una PR). Log en `datos/actualizar-estatico.log`, estado en
 `datos/estatico-estado.json`. `--seco` comprueba sin cargar, `--forzar` ignora
 `Last-Modified`.
