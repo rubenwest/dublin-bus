@@ -392,16 +392,17 @@ total. Conclusión: **llegadas en vivo, anchas; histórico, estrecho.**
 **El bucle ya está del revés** (hecho el 2026-09-08). Antes recorría
 *paradas → trips* y paginaba TODO el `horario` de las paradas seguidas en cada
 pasada; con cientos de paradas eso son millones de filas por minuto. Ahora
-recorre *trips en vivo → sus paradas*: se sacan del feed los ~2.300 trip_id
-vivos y se obtiene su horario mediante `horario_de_trips_json(text[])`, una
-función SQL que agrega el resultado en un único JSONB. Así no se pierde nada
-por el límite de 1.000 filas de PostgREST y Edge solo hace una consulta por
-pasada. El coste queda **acotado por el feed, no por el número total de
-paradas del GTFS**, que es justo lo que permite ensanchar gratis. La consulta
-usa el índice `horario(trip_id)`: la PK es `(stop_id, trip_id)` y no sirve para
-buscar solo por trip.
+recorre *trips en vivo → las paradas que servimos*: se sacan del feed los
+`trip_id` vivos y se obtiene solo su cruce con esas paradas y con una ventana
+horaria que puede acabar en los próximos 90 minutos, incluido el retraso máximo
+admisible. `horario_de_trips_en_ventana_json` agrega ese resultado ya filtrado
+en un JSONB. Así no se pierde nada por el límite de 1.000 filas de PostgREST ni
+se transfiere el horario entero de los viajes a Edge. La consulta fuerza el
+índice `horario(trip_id)` antes de cruzar fechas y paradas: la PK es
+`(stop_id, trip_id)` y no sirve para buscar solo por trip.
 
-Las RPC `horario_de_trips_json` e `ingerir` tienen el EXECUTE revocado a
+Las RPC `horario_de_trips_json`, `horario_de_trips_en_paradas_json`,
+`horario_de_trips_en_ventana_json` e `ingerir` tienen el EXECUTE revocado a
 `anon`/`public` y concedido a `service_role`.
 
 **2. ~~Geolocalización~~ HECHO el 2026-09-09: radar "cerca de ti".** Pantalla

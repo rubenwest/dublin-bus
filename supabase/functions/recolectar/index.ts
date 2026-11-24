@@ -37,6 +37,8 @@ const TIMEOUT_MS = 40_000;
 const REINTENTOS = 4;
 /** Ventana de llegadas que se guarda en la caché. */
 const VENTANA_MIN = [-2, 90];
+/** Margen de horario para no perder buses con retraso o adelanto admisible. */
+const MARGEN_HORARIO_SEGUNDOS = LIMITE_DELAY_SEGUNDOS;
 /** upsert de la caché por lotes: con cientos de paradas el body puede crecer. */
 const LOTE_CACHE = 500;
 
@@ -153,17 +155,34 @@ Deno.serve(async (_req) => {
     }
     const vivos = [...tuPorTrip.keys()];
 
-    // 5. El horario SOLO de esos trips. Acotado por el feed (~2.800 trips), no
-    //    por el número de paradas: por eso abrir el centro no dispara el coste.
-    //    Sustituye a paginar todo el horario estático en cada pasada.
+    // 5. El horario SOLO de esos trips Y de las paradas que servimos. Aunque
+    //    haya ~2.800 trips vivos, transferir todas sus paradas excede el límite
+    //    de cómputo de Edge. El filtro de parada se hace en PostgreSQL, antes de
+    //    formar el JSON que cruza la function.
     const indicePorTrip = new Map();
     if (vivos.length) {
-      // La función SQL agrega el resultado en un único JSONB. Así no aplica el
-      // límite de 1.000 filas de PostgREST y Edge solo hace una petición y un
-      // parseo, dentro del presupuesto de CPU del plan gratuito.
+      const stopIds = [...new Set([...enVivo, ...historico])];
+      const desde = new Date(
+        ahora.getTime() + (VENTANA_MIN[0] * 60 - MARGEN_HORARIO_SEGUNDOS) * 1000,
+      ).toISOString();
+      const hasta = new Date(
+        ahora.getTime() + (VENTANA_MIN[1] * 60 + MARGEN_HORARIO_SEGUNDOS) * 1000,
+      ).toISOString();
+      const viajes = vivos.map((trip_id) => ({
+        trip_id,
+        start_date: tuPorTrip.get(trip_id).trip.start_date,
+      }));
+      // SQL filtra también por la ventana horaria antes de agregar: evita el
+      // límite tabular de PostgREST sin traer paradas ya pasadas o lejanas.
       const { data: filasHorario, error: e2 } = await supabase
-        .rpc("horario_de_trips_json", { p_trips: vivos });
-      if (e2) throw new Error(`horario_de_trips_json: ${e2.message}`);
+        .rpc("horario_de_trips_en_ventana_json", {
+          p_trip_ids: vivos,
+          p_viajes: viajes,
+          p_stop_ids: stopIds,
+          p_desde: desde,
+          p_hasta: hasta,
+        });
+      if (e2) throw new Error(`horario_de_trips_en_ventana_json: ${e2.message}`);
       for (const h of filasHorario ?? []) {
           // `horario` solo tiene paradas seguidas, pero por si queda alguna fila
           // vieja de una parada ya apagada, nos ceñimos a las que nos importan.
