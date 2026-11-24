@@ -1,5 +1,12 @@
 # Proyecto: llegadas reales de bus en Dublín
 
+> **PARADO desde el 2026-11-24.** Sin uso (4 visitas en un mes, todas de Rubén).
+> Supabase `dublin-bus` está pausado (con él, el `pg_cron` y la función `recolectar`),
+> GitHub Pages está desactivado y el workflow «Desplegar web» deshabilitado.
+> Para recuperarlo: restaurar el proyecto en Supabase, activar Pages con origen
+> «GitHub Actions» y habilitar el workflow. Ojo: el cron cada minuto agotaba la
+> cuota de egress que comparte la organización con `jacobo-studios`.
+
 ## Qué es
 
 App de llegadas de autobús para Dublín sobre el feed GTFS-Realtime de la NTA.
